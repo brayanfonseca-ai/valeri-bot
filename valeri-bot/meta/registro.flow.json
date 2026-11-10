@@ -1,0 +1,55 @@
+{
+  "version": "7.2",
+  "screens": [
+    {
+      "id": "REGISTRO",
+      "title": "Verifica tu identidad",
+      "terminal": true,
+      "success": true,
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "form",
+            "children": [
+              {
+                "type": "TextBody",
+                "text": "Ingresa tus datos tal como están registrados en Buk."
+              },
+              {
+                "type": "TextInput",
+                "name": "cedula",
+                "label": "Número de cédula",
+                "input-type": "number",
+                "required": true,
+                "min-chars": 5,
+                "max-chars": 10,
+                "helper-text": "Solo números, sin puntos"
+              },
+              {
+                "type": "TextInput",
+                "name": "telefono",
+                "label": "Celular en Buk",
+                "input-type": "phone",
+                "required": true,
+                "helper-text": "El registrado en Buk. Ej: 3001234567"
+              },
+              {
+                "type": "Footer",
+                "label": "Continuar",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "cedula": "${form.cedula}",
+                    "telefono": "${form.telefono}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

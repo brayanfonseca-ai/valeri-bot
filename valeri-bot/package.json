@@ -1,0 +1,26 @@
+{
+  "name": "valeri-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Valeri: asistente de WhatsApp de Transportes Vigía (BuilderBot + Meta Cloud API)",
+  "type": "module",
+  "scripts": {
+    "build": "rollup -c",
+    "start": "node --env-file=.env ./dist/app.js",
+    "dev": "npm run build && npm start",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@builderbot/bot": "1.4.4",
+    "@builderbot/provider-meta": "1.4.4"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "rollup": "4.68.2",
+    "rollup-plugin-typescript2": "0.37.0",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

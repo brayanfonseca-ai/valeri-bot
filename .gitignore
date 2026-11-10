@@ -1,0 +1,21 @@
+# ── REPOSITORIO PÚBLICO: nunca subir secretos ni datos personales ──
+**/.env
+**/data/
+**/certs/
+
+# Generados
+**/node_modules/
+**/dist/
+**/.rollup.cache/
+**/bot_sessions/
+*.log
+*_tmp.*
+
+# Documentación interna de la plataforma del servidor
+# (contiene IPs, usuarios, rutas y datos de otros proyectos)
+docs/00-SERVIDOR-E-INFRAESTRUCTURA.md
+docs/01-GUIA-NUEVO-AGENTE.md
+
+# Catálogo completo de la API de Buk (pendiente de decidir si se publica)
+docs/05_catalogo_completo_endpoints.md
+docs/por_modulo/

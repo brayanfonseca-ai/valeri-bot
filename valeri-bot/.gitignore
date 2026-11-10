@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.rollup.cache/
+.env
+certs/
+logs/
+*.log
+bot_sessions/
+# Datos personales de prueba (cédulas y teléfonos)
+data/

@@ -1,0 +1,61 @@
+/**
+ * Validación del empleado contra Buk (a través del endpoint de ETL).
+ *
+ * Modos (variable VALERI_VALIDACION):
+ *  - "abierta": PRUEBAS. Todo el que confirma sus datos queda autorizado. No consulta nada.
+ *  - "etl":     PRODUCCIÓN. Consulta el endpoint de validación de ETL (ETL_VALIDACION_URL).
+ *
+ * Contrato PROVISIONAL del endpoint de ETL (confirmar con ETL antes de activar):
+ *   GET {ETL_VALIDACION_URL}?cedula=1023456789&telefono=3001234567
+ *   Cabecera opcional: Authorization: Bearer {ETL_TOKEN}
+ *   Respuesta 200 JSON:
+ *     { "autorizado": true,  "id_buk": 1234 }
+ *     { "autorizado": false, "motivo": "no_encontrado" | "inactivo" | "telefono_no_coincide" }
+ *   Del lado de ETL: GET /employees/{cédula} en Buk, empleado con status "activo"
+ *   y teléfono registrado igual al ingresado (normalizado a 10 dígitos).
+ */
+import { config } from './config'
+
+export type MotivoRechazo = 'no_encontrado' | 'inactivo' | 'telefono_no_coincide' | 'desconocido'
+
+export type ResultadoValidacion =
+  | { estado: 'autorizado'; idBuk?: number }
+  | { estado: 'no_autorizado'; motivo: MotivoRechazo }
+  | { estado: 'error'; detalle: string }
+
+const MOTIVOS: MotivoRechazo[] = ['no_encontrado', 'inactivo', 'telefono_no_coincide']
+
+export async function validarEmpleado(cedula: string, telefono: string): Promise<ResultadoValidacion> {
+  if (config.validacion.modo === 'abierta') {
+    return { estado: 'autorizado' }
+  }
+
+  const url = config.validacion.etlUrl
+  if (!url) {
+    return { estado: 'error', detalle: 'ETL_VALIDACION_URL no está definido' }
+  }
+
+  try {
+    const destino = new URL(url)
+    destino.searchParams.set('cedula', cedula)
+    destino.searchParams.set('telefono', telefono)
+    const headers: Record<string, string> = { Accept: 'application/json' }
+    if (config.validacion.etlToken) headers.Authorization = `Bearer ${config.validacion.etlToken}`
+
+    const respuesta = await fetch(destino, { headers, signal: AbortSignal.timeout(15000) })
+    if (!respuesta.ok) {
+      return { estado: 'error', detalle: `ETL respondió ${respuesta.status}` }
+    }
+    const cuerpo = (await respuesta.json()) as { autorizado?: unknown; motivo?: unknown; id_buk?: unknown }
+    if (cuerpo.autorizado === true) {
+      return { estado: 'autorizado', idBuk: typeof cuerpo.id_buk === 'number' ? cuerpo.id_buk : undefined }
+    }
+    if (cuerpo.autorizado === false) {
+      const motivo = MOTIVOS.includes(cuerpo.motivo as MotivoRechazo) ? (cuerpo.motivo as MotivoRechazo) : 'desconocido'
+      return { estado: 'no_autorizado', motivo }
+    }
+    return { estado: 'error', detalle: 'respuesta de ETL sin el campo "autorizado"' }
+  } catch (error) {
+    return { estado: 'error', detalle: error instanceof Error ? error.message : String(error) }
+  }
+}
