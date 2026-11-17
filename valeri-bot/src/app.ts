@@ -46,6 +46,11 @@ async function main() {
   } else if (!config.validacion.etlUrl) {
     console.warn('[valeri-bot] VALERI_VALIDACION=etl pero falta ETL_VALIDACION_URL: nadie podrá validarse.')
   }
+  if (!config.etl.baseUrl || !config.etl.apiKey) {
+    console.warn('[valeri-bot] Falta ETL_BASE_URL o ETL_TOKEN: las opciones del menú conectadas a ETL responderán con error.')
+  } else {
+    console.log(`[valeri-bot] API de ETL: ${config.etl.baseUrl}`)
+  }
   if (!config.meta.appSecret) {
     console.warn('[valeri-bot] META_APP_SECRET no está definido: no se valida la firma de los webhooks.')
   }

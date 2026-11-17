@@ -17,9 +17,22 @@ export interface Registro {
 
 const RUTA = path.resolve('data', 'registros.json')
 
+/**
+ * Se lee el archivo en CADA consulta (no hay caché): si se borra una entrada o el
+ * archivo completo, el siguiente mensaje de ese número vuelve a pedir el registro,
+ * sin reiniciar el bot. Archivo vacío o con JSON inválido = sin registros.
+ */
 function leerTodos(): Record<string, Registro> {
   if (!fs.existsSync(RUTA)) return {}
-  return JSON.parse(fs.readFileSync(RUTA, 'utf8'))
+  const texto = fs.readFileSync(RUTA, 'utf8').trim()
+  if (!texto) return {}
+  try {
+    const datos = JSON.parse(texto)
+    return datos && typeof datos === 'object' && !Array.isArray(datos) ? datos : {}
+  } catch {
+    console.warn(`[registros] ${RUTA} no es un JSON válido; se trata como vacío.`)
+    return {}
+  }
 }
 
 export function obtenerRegistro(waId: string): Registro | undefined {

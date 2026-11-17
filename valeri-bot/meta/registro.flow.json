@@ -15,7 +15,7 @@
             "children": [
               {
                 "type": "TextBody",
-                "text": "Ingresa tus datos tal como están registrados en Buk."
+                "text": "Ingresa tus datos tal como están registrados."
               },
               {
                 "type": "TextInput",
@@ -30,10 +30,10 @@
               {
                 "type": "TextInput",
                 "name": "telefono",
-                "label": "Celular en Buk",
+                "label": "Número celular",
                 "input-type": "phone",
                 "required": true,
-                "helper-text": "El registrado en Buk. Ej: 3001234567"
+                "helper-text": "10 dígitos. Ej: 3001234567"
               },
               {
                 "type": "Footer",

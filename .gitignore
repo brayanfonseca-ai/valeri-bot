@@ -15,6 +15,7 @@
 # (contiene IPs, usuarios, rutas y datos de otros proyectos)
 docs/00-SERVIDOR-E-INFRAESTRUCTURA.md
 docs/01-GUIA-NUEVO-AGENTE.md
+docs/02-ARQUITECTURA-REFERENCIA-PAULA.md
 
 # Catálogo completo de la API de Buk (pendiente de decidir si se publica)
 docs/05_catalogo_completo_endpoints.md

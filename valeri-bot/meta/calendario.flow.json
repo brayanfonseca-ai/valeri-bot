@@ -1,0 +1,55 @@
+{
+  "version": "7.2",
+  "screens": [
+    {
+      "id": "FECHA_INICIO",
+      "title": "Fecha de inicio",
+      "terminal": true,
+      "success": true,
+      "data": {
+        "dias": { "type": "string", "__example__": "4" },
+        "texto": { "type": "string", "__example__": "Elige el día en que inicias tus 4 días de vacaciones." },
+        "min_fecha": { "type": "string", "__example__": "2026-11-10" },
+        "max_fecha": { "type": "string", "__example__": "2027-11-10" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "form",
+            "children": [
+              {
+                "type": "TextBody",
+                "text": "${data.texto}"
+              },
+              {
+                "type": "CalendarPicker",
+                "name": "fecha",
+                "label": "Fecha de inicio",
+                "mode": "single",
+                "min-date": "${data.min_fecha}",
+                "max-date": "${data.max_fecha}",
+                "include-days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+                "required": true,
+                "helper-text": "Los domingos no son días hábiles"
+              },
+              {
+                "type": "Footer",
+                "label": "Continuar",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "tipo": "vacaciones_inicio",
+                    "fecha": "${form.fecha}",
+                    "dias": "${data.dias}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

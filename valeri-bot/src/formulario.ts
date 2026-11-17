@@ -58,3 +58,84 @@ export function leerFormulario(ctx: unknown): DatosFormulario | null | undefined
   if (!cedula.ok || !telefono.ok) return null
   return { cedula: cedula.valor, telefono: telefono.valor }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Calendario de fecha de inicio de vacaciones (meta/calendario.flow.json)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Valor de "tipo" que devuelve el calendario; distingue su respuesta de la del registro. */
+export const TIPO_CALENDARIO = 'vacaciones_inicio'
+
+/**
+ * Envía el botón que abre el calendario. Fecha mínima, máxima y días van en
+ * flow_action_payload.data (el calendario bloquea domingos con include-days).
+ * Devuelve false si no hay Flow configurado o Meta rechazó el envío: quien llama
+ * debe usar las listas año -> mes -> día como respaldo.
+ */
+export async function enviarCalendario(
+  provider: MetaProvider,
+  to: string,
+  datos: { dias: number; minFecha: string; maxFecha: string },
+): Promise<boolean> {
+  if (!config.flowCalendario.id) return false
+  const c = MSG.calendario
+  const body = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to,
+    type: 'interactive',
+    interactive: {
+      type: 'flow',
+      header: { type: 'text', text: c.encabezado },
+      body: { text: c.cuerpo(datos.dias) },
+      footer: { text: MSG.menu.pie },
+      action: {
+        name: 'flow',
+        parameters: {
+          flow_message_version: '3',
+          flow_token: `valeri-vacaciones-${datos.dias}`,
+          flow_id: config.flowCalendario.id,
+          flow_cta: c.boton,
+          flow_action: 'navigate',
+          flow_action_payload: {
+            screen: config.flowCalendario.pantalla,
+            data: {
+              dias: String(datos.dias),
+              texto: c.texto(datos.dias),
+              min_fecha: datos.minFecha,
+              max_fecha: datos.maxFecha,
+            },
+          },
+        },
+      },
+    },
+  }
+  const respuesta = await provider.sendMessageMeta(body as unknown as Parameters<MetaProvider['sendMessageMeta']>[0])
+  const error = respuesta?.error ?? respuesta?.response?.data?.error
+  if (error) {
+    console.error('[calendario] Meta rechazó el envío del calendario; se usan las listas:', JSON.stringify(error))
+    return false
+  }
+  return true
+}
+
+/**
+ * Lee la respuesta del calendario (ctx.nfm_reply con tipo "vacaciones_inicio").
+ *  - undefined: el mensaje no viene del calendario;
+ *  - null: viene del calendario pero la fecha o los días no se entienden;
+ *  - { dias, fecha }: fecha "YYYY-MM-DD".
+ * Acepta también la fecha en milisegundos, por si Meta la entrega así.
+ */
+export function leerCalendario(ctx: unknown): { dias: number; fecha: string } | null | undefined {
+  const r = (ctx as { nfm_reply?: { tipo?: unknown; fecha?: unknown; dias?: unknown } })?.nfm_reply
+  if (!r || typeof r !== 'object' || r.tipo !== TIPO_CALENDARIO) return undefined
+  const dias = Number(r.dias)
+  if (!Number.isInteger(dias) || dias < 1) return null
+  let fecha = String(r.fecha ?? '').trim()
+  if (/^\d{10,14}$/.test(fecha)) {
+    const f = new Date(Number(fecha))
+    fecha = `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, '0')}-${String(f.getDate()).padStart(2, '0')}`
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return null
+  return { dias, fecha }
+}

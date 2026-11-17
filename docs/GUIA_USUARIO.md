@@ -12,8 +12,8 @@ Con ella puedes hacer trámites desde tu celular, sin entrar a la plataforma de 
 
 | Opción | Para qué sirve |
 |---|---|
-| 📄 Consultar extracto | Recibir tu comprobante de pago en PDF |
-| 🌴 Días de vacaciones | Saber cuántos días de vacaciones tienes disponibles |
+| 📄 Comprobante de pago | Recibir tu comprobante de nómina del mes que elijas, en PDF |
+| 🌴 Días de vacaciones | Saber cuántos días de vacaciones tienes pendientes por disfrutar |
 | 📝 Solicitar vacaciones | Pedir tus días de descanso |
 | 📑 Certificado laboral | Recibir tu certificado laboral en PDF |
 | 💬 Hablar con agente | Hablar con una persona de Recursos Humanos |
@@ -30,7 +30,7 @@ Con ella puedes hacer trámites desde tu celular, sin entrar a la plataforma de 
 Necesitas:
 
 - Tu **número de cédula**.
-- El **número de celular que tienes registrado en Buk** (el que diste a Recursos Humanos).
+- Tu **número celular** (el que diste a Recursos Humanos).
 - WhatsApp en tu celular.
 
 Valeri se maneja casi todo con **botones**: solo vas a escribir tu cédula y tu celular, y eso solo la primera vez.
@@ -45,7 +45,7 @@ Esto se hace **una sola vez**. Después Valeri te reconoce cada vez que le escri
 flowchart TD
     A["1. Escríbele a Valeri<br/>(por ejemplo: hola)"] --> B["2. Valeri te saluda y te muestra<br/>el botón 'Ingresar mis datos'"]
     B --> C["3. Toca el botón:<br/>se abre una ventana"]
-    C --> D["4. Escribe tu cédula y tu celular<br/>registrado en Buk. Toca 'Continuar'"]
+    C --> D["4. Escribe tu cédula y tu<br/>número celular. Toca 'Continuar'"]
     D --> E["5. Valeri te muestra tus datos<br/>y te pregunta si están bien"]
     E -- "Toca 'Sí, correctos'" --> F["6. Valeri verifica tu información"]
     E -- "Toca 'No, corregir'" --> C
@@ -60,7 +60,7 @@ flowchart TD
 3. **Toca el botón.** Se abre una ventana dentro de WhatsApp.
 4. En la ventana escribe:
    - **Número de cédula:** solo números, sin puntos. Ejemplo: `1023456789`.
-   - **Celular en Buk:** el celular que tienes registrado en Buk. Ejemplo: `3001234567`.
+   - **Número celular:** el celular que diste a Recursos Humanos, 10 dígitos. Ejemplo: `3001234567`.
 
    Luego toca **Continuar**.
 5. Valeri te muestra tus datos y te pregunta: *¿Estás seguro de que estos son tus datos?*
@@ -91,7 +91,71 @@ flowchart LR
 1. Escríbele cualquier mensaje.
 2. Toca **Ver opciones**.
 3. Elige lo que necesitas de la lista.
-4. Cuando termines, puedes volver a escribirle para ver el menú otra vez.
+4. Cuando termines, Valeri te vuelve a mostrar el menú por si necesitas algo más.
+
+### 📄 Comprobante de pago
+
+1. En el menú elige **Comprobante de pago**.
+2. Toca **Ver años** y elige el año (por ejemplo *2026*).
+3. Toca **Ver meses** y elige el mes.
+   - Si no ves el mes que buscas, toca **Más meses ➡️** al final de la lista para ver los meses anteriores.
+   - Para volver a los meses más recientes, toca **⬅️ Meses recientes**.
+
+> 🏠 **¿Te equivocaste de opción?** Al final de cada lista (años y meses) está **🏠 Menú principal**. Tócalo y vuelves al menú de inicio sin consultar nada.
+4. Valeri te dice *"Estoy buscando tu comprobante de pago"*. Puede tardar unos segundos.
+5. Recibes tu comprobante como un **archivo PDF** dentro del chat. Tócalo para abrirlo o guardarlo.
+6. Valeri te pregunta *"¿Deseas realizar otra consulta?"* con tres botones:
+   - **Sí, gracias**: vuelves al menú principal.
+   - **No, finalizar**: Valeri se despide y termina la conversación. Cuando le escribas de nuevo, verás el menú (no tienes que registrarte otra vez).
+   - **Hablar con agente**: te comunica con Recursos Humanos *(muy pronto disponible)*.
+
+Si ese mes todavía no tiene comprobante (por ejemplo, aún no se ha liquidado la nómina), Valeri te lo dirá. Puedes elegir otro mes.
+
+### 🌴 Días de vacaciones
+
+1. En el menú elige **Días de vacaciones**.
+2. Valeri te dice cuántos días de vacaciones tienes **pendientes por disfrutar a la fecha de hoy**, por ejemplo: *Tienes 4 días de vacaciones pendientes por disfrutar*.
+3. Luego te pregunta *"¿Deseas realizar otra consulta?"* con los mismos tres botones: **Sí, gracias**, **No, finalizar** y **Hablar con agente**.
+
+### 🏖️ Solicitar vacaciones
+
+1. En el menú elige **Solicitar vacaciones**.
+2. Valeri revisa cuántos días tienes disponibles y te muestra una lista para elegir **cuántos días quieres pedir**. Solo verás los que puedes pedir: si tienes 4 días, la lista va del 1 al 4.
+3. Toca **Ver días** y elige la cantidad.
+   - Si tienes muchos días, al final de la lista está **Más días ➡️** para ver más cantidades, y **⬅️ Días anteriores** para volver.
+4. Toca **Elegir fecha**: se abre un **calendario**. Toca el día en que empiezas tus vacaciones y luego **Continuar**.
+   - Puedes elegir desde hoy hasta un año adelante.
+   - Los **domingos aparecen bloqueados**, porque no son días hábiles.
+   - Si tu WhatsApp no muestra el calendario, Valeri te pedirá la fecha con listas: primero el año, luego el mes y luego el día.
+5. Valeri calcula sola **cuándo terminan** tus vacaciones, contando tus días sin los domingos, y te muestra un resumen. Por ejemplo, si pides 4 días desde el jueves 12 de noviembre:
+   - Inicias: jueves 12 de noviembre
+   - Terminas: lunes 16 de noviembre (el domingo 15 no se cuenta)
+   - Regresas a trabajar: martes 17 de noviembre
+6. Toca un botón:
+   - **Confirmar**: envías la solicitud.
+   - **Editar fecha**: eliges otra fecha de inicio (se mantienen los mismos días).
+   - **Cancelar**: no se envía nada.
+
+> 🚧 Por ahora Valeri arma tu solicitud pero **todavía no la envía a Recursos Humanos**. Muy pronto quedará conectada.
+
+> 💡 **Siempre igual:** cada vez que termina una consulta (comprobante, vacaciones o cualquier otra opción), Valeri te hace esta misma pregunta con los tres botones.
+
+```mermaid
+flowchart TD
+    A["Menú"] --> B{"¿Qué elegiste?"}
+    B -- "Comprobante de pago" --> C["Elige el año"] --> D["Elige el mes<br/>(o 'Más meses')"] --> E["Recibes el PDF"]
+    B -- "Días de vacaciones" --> F["Ves tus días pendientes"]
+    B -- "Solicitar vacaciones" --> J["Eliges cuántos días<br/>(del 1 a los que tienes)"] --> K["Eliges en el calendario<br/>el día de inicio"] --> L{"Resumen con<br/>fecha de fin"}
+    L -- "Editar fecha" --> K
+    L -- "Confirmar o Cancelar" --> G
+    E --> G{"¿Otra consulta?"}
+    G -- "Sí, gracias" --> A
+    G -- "No, finalizar" --> H["Valeri se despide"]
+    G -- "Hablar con agente" --> I["Recursos Humanos<br/>(muy pronto)"] --> G
+    F --> G
+    C -. "🏠 Menú principal" .-> A
+    D -. "🏠 Menú principal" .-> A
+```
 
 ---
 
@@ -104,6 +168,8 @@ flowchart LR
 | *"Esta cédula ya está vinculada a otro número de WhatsApp"* | Ya te registraste antes desde otro celular | Si cambiaste de celular, comunícate con **Recursos Humanos** para actualizarlo |
 | *"Tuve un problema para verificar tu información en este momento"* | Falla temporal del sistema, no es tu culpa | Intenta de nuevo en unos minutos |
 | *"Esta opción estará disponible muy pronto"* | Esa opción del menú aún no está habilitada | Elige otra opción o vuelve más adelante |
+| *"Tuve un problema para consultar tu información en este momento"* | Falla temporal al consultar Buk | Intenta de nuevo en unos minutos |
+| *"No encontré tu comprobante de pago de…"* | Ese mes no tiene comprobante (puede no estar liquidado aún) | Prueba con otro mes o comunícate con **Recursos Humanos** |
 
 ```mermaid
 flowchart TD

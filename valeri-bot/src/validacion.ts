@@ -7,7 +7,7 @@
  *
  * Contrato PROVISIONAL del endpoint de ETL (confirmar con ETL antes de activar):
  *   GET {ETL_VALIDACION_URL}?cedula=1023456789&telefono=3001234567
- *   Cabecera opcional: Authorization: Bearer {ETL_TOKEN}
+ *   Cabecera: x-api-key: {ETL_TOKEN}   (igual que el resto de la API de ETL)
  *   Respuesta 200 JSON:
  *     { "autorizado": true,  "id_buk": 1234 }
  *     { "autorizado": false, "motivo": "no_encontrado" | "inactivo" | "telefono_no_coincide" }
@@ -39,8 +39,9 @@ export async function validarEmpleado(cedula: string, telefono: string): Promise
     const destino = new URL(url)
     destino.searchParams.set('cedula', cedula)
     destino.searchParams.set('telefono', telefono)
+    // Misma autenticación que el resto de la API de ETL (API Gateway): x-api-key.
     const headers: Record<string, string> = { Accept: 'application/json' }
-    if (config.validacion.etlToken) headers.Authorization = `Bearer ${config.validacion.etlToken}`
+    if (config.etl.apiKey) headers['x-api-key'] = config.etl.apiKey
 
     const respuesta = await fetch(destino, { headers, signal: AbortSignal.timeout(15000) })
     if (!respuesta.ok) {
