@@ -45,8 +45,9 @@ Valeri es la asistente de WhatsApp de **Transportes Vigía** para conductores y 
 | Menú principal y "¿Deseas realizar otra consulta?" | Funciona |
 | Comprobante de pago (año → mes → PDF) | Conectado a ETL `/extracto` |
 | Días de vacaciones | Conectado a ETL `/vacaciones` |
-| Solicitar vacaciones (días → calendario → resumen → confirmar) | Desarrollado. El envío a ETL está apagado hasta que ETL publique la ruta |
-| Certificado laboral, Hablar con agente | "En construcción" |
+| Solicitar vacaciones (días → calendario → resumen → confirmar → respuesta de Buk) | **Activo**: registra en Buk vía ETL `POST /vacaciones`. Falta la primera prueba real |
+| Certificado laboral (PDF sin salario) | Conectado a ETL `POST /certificado-laboral` |
+| Hablar con agente | "En construcción" |
 | Código SMS, base de datos, despliegue con PM2 | No desarrollados |
 
 Fase: **desarrollo local**. Reparto: ETL construye los endpoints hacia Buk; el bot hace la conversación; Infraestructura y Redes, el servidor y la ruta pública.
@@ -113,7 +114,7 @@ flowchart LR
 | WABA | `2550144075397020` |
 | Graph API | `v26.0` |
 | Flow de registro | `valeri_registro_v2` — `1862130361868911` — PUBLISHED — `SIGN_UP` |
-| Flow del calendario | `valeri_vacaciones_calendario` — `1666616588264126` — PUBLISHED — `APPOINTMENT_BOOKING` |
+| Flow del calendario | `valeri_vacaciones_calendario_v2` — `2152027718731540` — PUBLISHED — `APPOINTMENT_BOOKING` (bloquea domingos y festivos) |
 
 En la cuenta de Meta de la empresa hay apps y números de otros proyectos: no usarlos con Valeri. Los tokens viven **solo** en `valeri-bot/.env` (fuera de git).
 
@@ -134,15 +135,15 @@ Archivo `valeri-bot/.env` (no versionado; plantilla `.env.example`). Se carga co
 | `META_APP_SECRET` | Recomendada | vacía | Si se define, rechaza (401) webhooks sin firma válida. **Obligatoria en producción** |
 | `META_FLOW_ID` | Sí | `1862130361868911` | Flow de registro |
 | `META_FLOW_DRAFT` | No (`true`) | `false` | `true` = enviar Flow en modo borrador |
-| `META_FLOW_CALENDARIO_ID` | No | `1666616588264126` | Flow del calendario. Vacía = listas año → mes → día |
+| `META_FLOW_CALENDARIO_ID` | No | `2152027718731540` | Flow del calendario. Vacía = listas año → mes → día |
 | `VALERI_VALIDACION` | No (`etl`) | `abierta` | `abierta` = todos autorizados (pruebas); `etl` = producción |
 | `ETL_VALIDACION_URL` | Si modo `etl` | vacía | URL completa del endpoint de validación (§9) |
 | `ETL_BASE_URL` | Sí | `https://ibs9x7piq3.execute-api.us-east-2.amazonaws.com/Prod` | Base de la API de ETL |
 | `ETL_TOKEN` | Sí | (API Key) | Cabecera `x-api-key` en todas las llamadas a ETL |
 | `ETL_TIMEOUT_MS` | No (60000) | `60000` | Tiempo máximo por llamada y por descarga de PDF |
-| `ETL_SOLICITUD_VACACIONES_RUTA` | No | vacía | Ruta del POST de solicitud de vacaciones. **Vacía = no se envía** |
+| `ETL_SOLICITUD_VACACIONES_RUTA` | No | `/vacaciones` (**activo**) | Ruta del POST de solicitud de vacaciones. Vacía = no se envía nada a Buk |
 | `VACACIONES_TIPO` | No (`legales`) | — | Campo `type` |
-| `VACACIONES_PERCENT_DAY` | No (`100`) | — | Campo `percent_day` (porcentaje de la jornada) |
+| `VACACIONES_PERCENT_DAY` | No (`100`) | — | Campo `percent_day`: fracción del último día (día completo). Buk se contradice: texto "0 < x ≤ 1" y ejemplo "100" (§14.3) |
 | `VACACIONES_WORKDAY_STAGE` | No (`full_working_day`) | — | Campo `workday_stage` |
 | `TLS_EXTRA_CA`, `NODE_EXTRA_CA_CERTS` | No | `./certs/acronis-ca.pem` | CA del proxy corporativo (guía 00 §6) |
 
@@ -262,12 +263,12 @@ Flow JSON 7.2, pantalla `REGISTRO`, sin endpoint. Mensaje: encabezado "¡Hola! S
 
 ### 8.2 Calendario de fecha de inicio (`meta/calendario.flow.json`)
 
-Flow JSON 7.2, pantalla `FECHA_INICIO`, componente **CalendarPicker** (`mode: single`, `include-days: Mon..Sat` → domingos bloqueados, `required`).
+Flow JSON 7.2, pantalla `FECHA_INICIO`, componente **CalendarPicker** (`mode: single`, `include-days: Mon..Sat` → domingos bloqueados, `unavailable-dates: ${data.festivos}` → festivos bloqueados, `required`).
 
 | Envío (`enviarCalendario`) | Valor |
 |---|---|
 | Botón | "Elegir fecha" |
-| `flow_action_payload.data` | `dias`, `texto`, `min_fecha` = hoy, `max_fecha` = hoy + 1 año (`YYYY-MM-DD`) |
+| `flow_action_payload.data` | `dias`, `texto`, `min_fecha` = hoy, `max_fecha` = hoy + 1 año, `festivos` = festivos de Colombia en esa ventana (`YYYY-MM-DD`, `festivosEntre`) |
 | Respuesta (`ctx.nfm_reply`) | `{ tipo: "vacaciones_inicio", fecha: "YYYY-MM-DD", dias: "N" }` |
 
 - `leerCalendario` reconoce la respuesta por `tipo` y acepta la fecha en `YYYY-MM-DD` o en milisegundos.
@@ -316,7 +317,7 @@ Encabezado "📋 Menú principal", cuerpo "¿En qué te puedo ayudar hoy? 😊",
 | `comprobante` | Comprobante de pago | §14.1 |
 | `dias_vacaciones` | Días de vacaciones | §14.2 |
 | `solicitar_vacaciones` | Solicitar vacaciones | §14.3 |
-| `certificado` | Certificado laboral | "En construcción" |
+| `certificado` | Certificado laboral | §14.4 |
 | `agente` | Hablar con agente | "En construcción" |
 
 Límites de Meta en listas: encabezado 60, cuerpo 1024, botón 20, título de fila 24, descripción 72, **máximo 10 filas**.
@@ -358,6 +359,7 @@ Cuerpo: con archivo entregado, "✅ ¡Listo! <texto>\n\n¿Deseas realizar otra c
 | `MSG.opcionEnConstruccion`, `MSG.errorConsulta` | Opción no disponible; falla técnica con ETL o Meta |
 | `MSG.comprobante.*` | Listas de año y mes, espera, texto del PDF, no encontrado |
 | `MSG.vacaciones.*` | Espera y "Tienes *N días*…" |
+| `MSG.certificado.*` | Espera, texto del PDF, entregado, datos incompletos (422), no encontrado (404) |
 | `MSG.solicitud.*` | Lista de días, listas de fecha, resumen, enviada / sin envío / cancelada / vencida / sin días / excede saldo |
 | `MSG.calendario.*` | Mensaje del calendario, texto interno, fecha no válida |
 | `MSG.botonesSolicitud` | Confirmar, Editar fecha, Cancelar |
@@ -406,9 +408,9 @@ Todo pasa por `etl.ts → llamarEtl`: arma la URL (base + ruta), agrega la API K
 |---|---|---|---|
 | `GET /extracto/{cedula}?year&month&format=pdf` | `obtenerComprobante` | Comprobante de pago | Conectado |
 | `GET /vacaciones/{cedula}?date=DD-MM-YYYY` | `obtenerVacaciones` | Días de vacaciones, Solicitar vacaciones | Conectado |
-| `POST {ETL_SOLICITUD_VACACIONES_RUTA}` | `crearSolicitudVacaciones` | Solicitar vacaciones | Pendiente de ETL |
+| `POST /vacaciones` (`ETL_SOLICITUD_VACACIONES_RUTA`) | `crearSolicitudVacaciones` | Solicitar vacaciones | Publicado por ETL (Swagger 1.3.0). Apagado en el bot hasta definir la variable |
 | `GET {ETL_VALIDACION_URL}` | `validarEmpleado` | Registro | Pendiente de ETL |
-| — | — | Certificado laboral | Pendiente de ETL |
+| `POST /certificado-laboral` `{cedula}` | `obtenerCertificado` | Certificado laboral | Conectado (Swagger 1.5.0) |
 
 Ambos endpoints conectados se consultan por **cédula** (el Swagger dice `employee_id` en `/vacaciones`, pero ETL confirmó la cédula). Los logs nunca incluyen cédula, teléfono ni API Key; el número aparece enmascarado (`******1234`).
 
@@ -483,15 +485,21 @@ flowchart TD
 | Regla | Detalle |
 |---|---|
 | Ventana | Desde hoy hasta hoy + 1 año (`VENTANA_MESES = 12`) |
-| Domingos | No son hábiles: no se pueden elegir y no se cuentan |
-| Lunes a sábado | Cuentan |
+| Día hábil (`esHabil`) | Lunes a sábado que no sea festivo. Es lo que Buk cuenta como `working_days` |
+| Domingos y festivos | No se pueden elegir como inicio y no se cuentan |
+| Festivos (`festivosColombia`) | Calculados por año (Ley 51 de 1983): fijos (1-ene, 1-may, 20-jul, 7-ago, 8-dic, 25-dic); trasladados al lunes (Reyes, San José, San Pedro, Asunción, Raza, Todos los Santos, Cartagena); según la Pascua (Jueves y Viernes Santo, Ascensión +43, Corpus +64, Sagrado Corazón +71). Verificados contra el calendario oficial 2026 y 2027 (18 y 18) |
 | Ids de las listas | `vi_a_{n}_{AAAA}`, `vi_mp_{n}_{AAAA}_{p}`, `vi_m_{n}_{AAAA}_{M}`, `vi_dp_{n}_{AAAA}_{M}_{p}`, `vi_d_{n}_{AAAA}_{M}_{D}` |
 | Fecha inválida | Vuelve a la lista de años |
 
 **Paso 3 — resumen** (`enviarResumen`):
-- **Fin** (`fechaFin`): día en que se completan N días hábiles contando el inicio como el primero; los domingos se saltan. Ej.: jueves 12-nov + 4 → jue 12, vie 13, sáb 14, lun 16 → fin lunes 16.
-- **Regreso** (`siguienteHabil`): siguiente día que no es domingo.
-- Muestra días, inicio, fin y regreso, con [Confirmar] [Editar fecha] [Cancelar]. La solicitud queda en memoria por wa_id (30 min); si venció → `MSG.solicitud.vencida`.
+El empleado solo elige **cuántos días** y la **fecha de inicio**; el bot calcula el resto con las mismas reglas que Buk:
+
+- **Fin** (`fechaFin`): día en que se completan N días hábiles contando el inicio como el primero; domingos y festivos se saltan. Ej.: jueves 12-nov-2026 + 4 → jue 12, vie 13, sáb 14, (dom 15, lun 16 festivo), mar 17 → **fin martes 17**.
+- **Días calendario** (`diasCalendario`): todos los días de inicio a fin, ambos incluidos (en el ejemplo, 6). Es lo que Buk llama `calendar_days`.
+- **Regreso** (`siguienteHabil`): siguiente día hábil después del fin.
+- **Antes de confirmar** el resumen muestra **solo** los días hábiles a solicitar y la fecha de inicio, con [Confirmar] [Editar fecha] [Cancelar]. Fin, días calendario y regreso se calculan (el POST necesita `end_date` y luego se comparan con Buk) pero **no se muestran**: se muestran después, con los datos que devuelve Buk. **Hasta tocar Confirmar no se llama a ninguna API de escritura.**
+- La solicitud queda en memoria por wa_id (30 min); si venció → `MSG.solicitud.vencida`.
+- Garantía comprobada: para 400 fechas de inicio × 5 cantidades, los días hábiles entre inicio y fin son exactamente N y el fin siempre es hábil.
 
 **Paso 4 — confirmar:** se vuelve a consultar el saldo y se arma el cuerpo (`armarSolicitudVacaciones`), con el mismo modelo que Buk `POST /vacations`:
 
@@ -508,15 +516,56 @@ flowchart TD
 
 | Campo | Origen |
 |---|---|
-| `employee_id` | Cédula del registro (ETL la traduce al id de Buk) |
+| `employee_id` | La **cédula** del registro, como número. ETL la traduce al id de Buk (confirmado con una solicitud real creada con una cédula). Hay empleados para los que la API responde `404 {"errors":["No encontrado: Employee"]}` aunque existen y están activos (ver pendiente 2) |
 | `type` | `VACACIONES_TIPO` (`legales`) |
 | `start_date` / `end_date` | Inicio elegido / fin calculado, `YYYY-MM-DD` |
-| `percent_day` | `VACACIONES_PERCENT_DAY` (`100`). En Buk es el porcentaje de la jornada, no la cantidad de días |
+| `percent_day` | `VACACIONES_PERCENT_DAY` (`100`). Fracción del último día que es vacaciones, no la cantidad de días. El contrato de Buk se contradice (texto: "mayor a 0 y ≤ 1, 1 = completo"; esquema y ejemplo: entero `100`); el Swagger de ETL acepta hasta 100. Si Buk rechaza el 100, se verá el motivo y se cambia la variable a `1` sin tocar código |
 | `workday_stage` | `VACACIONES_WORKDAY_STAGE` (`full_working_day`) |
 
-Envío: `POST {ETL_BASE_URL}{ETL_SOLICITUD_VACACIONES_RUTA}` con `x-api-key` y JSON. Con la ruta vacía no se envía nada: `MSG.solicitud.sinEnvio` y log `[solicitud] … NO enviada` (sin cédula). 2xx → `MSG.solicitud.enviada`; error → `MSG.errorConsulta`.
+Contrato de ETL (Swagger 1.3.0, `postVacaciones`): exige exactamente esos 6 campos (`additionalProperties: false`), `employee_id` entero ≥ 1, fechas `date`, `percent_day` > 0 y ≤ 100. Responde 200/201 con la respuesta de Buk sin cambios; 400 si faltan campos (verificado en vivo con cuerpo vacío); 401 credencial de Buk; 403 API Key; 422 Buk rechazó los datos; 500/502.
+
+Envío: `POST {ETL_BASE_URL}{ETL_SOLICITUD_VACACIONES_RUTA}` con `x-api-key` y JSON. **Activo** (`/vacaciones`). La solicitud en curso se borra antes del envío: un segundo toque en "Confirmar" no crea otra vacación.
+
+**Paso 5 — respuesta de Buk** (contrato de Buk `POST /vacations`, 201):
+
+```json
+{ "vacation": { "employee_id": 3993, "type": "legales", "start_date": "2026-11-12", "end_date": "2026-11-17",
+                "working_days": 4, "calendar_days": 6, "workday_stage": "full_working_day" } }
+```
+
+| Resultado | Qué hace el bot |
+|---|---|
+| 2xx | `leerVacacionRegistrada` (acepta `vacation`, `data` o el objeto en la raíz). Envía "✅ ¡Tu solicitud de vacaciones ha sido exitosa!" (`MSG.solicitud.enviada`) con **los datos que devolvió Buk**: días hábiles (`working_days`), días calendario (`calendar_days`), inicio, fin y regreso |
+| 404 | Empleado no encontrado en Buk (por ejemplo, si se envía la cédula en vez del id) → `MSG.errorConsulta` y log `[etl] solicitud de vacaciones falló … 404` |
+| 2xx distinto de lo mostrado | `compararConBuk` compara días hábiles, días calendario, inicio y fin con el resumen. Si algo difiere → `MSG.solicitud.diferencia` (aviso al empleado) y log `[solicitud] … Buk registró distinto` |
+| 2xx sin formato reconocible | Informa con lo calculado por el bot y deja la respuesta en el log |
+| 400 / 422 | `leerMotivoRechazo` (Buk: `{errors: [...]}`; ETL: `{error}` o `{message}`) → `MSG.solicitud.rechazada(motivo)`: "Buk no aceptó tu solicitud… Motivo: …" |
+| 401 / 403 / 5xx / sin respuesta | `MSG.errorConsulta` |
+
+Siempre termina con "¿otra consulta?". Con la ruta vacía no se envía nada: `MSG.solicitud.sinEnvio` y log `[solicitud] … NO enviada` (sin cédula). 2xx → `MSG.solicitud.enviada`; error → `MSG.errorConsulta`.
 
 ---
+
+### 14.4 Certificado laboral
+
+```
+POST {ETL_BASE_URL}/certificado-laboral
+x-api-key: {ETL_TOKEN}
+{ "cedula": "<cédula del registro>" }        ← único campo (texto o número; no admite otros campos)
+```
+
+ETL consulta el empleado en Buk y genera el certificado **sin salario** de Transportes Vigía (nombre, cédula, cargo, fecha de inicio y tipo de contrato; si está retirado, "desde … hasta …"). Respuesta 200, misma forma que el comprobante: `{ cedula, employee_id, full_name, status, found, filename, content_type, size_bytes, s3_key, download_url, expires_in }`. La URL vence en 60 min; ETL borra el archivo a los 7 días.
+
+Flujo (`opciones.ts → atenderCertificado`): "⏳ Estoy generando tu certificado laboral…" → ETL → descarga `download_url` (valida `%PDF`) → sube a Meta → documento `Certificado_laboral.pdf` con "📄 Tu certificado laboral de Transportes Vigía." → "✅ ¡Listo! Tu certificado laboral se generó correctamente. ¿Deseas realizar otra consulta?". El usuario nunca ve la URL.
+
+| Respuesta | Qué hace el bot |
+|---|---|
+| 200 `found: true` | Envía el PDF |
+| 200 sin URL, 404 | `MSG.certificado.noEncontrado` (comunicarse con RR. HH.) |
+| 422 (falta cargo, fecha de inicio, tipo de contrato o fecha de retiro en Buk) | `MSG.certificado.datosIncompletos` (RR. HH. debe completar los datos); el motivo de ETL queda en el log |
+| 400 / 403 / 5xx / sin respuesta, falla de descarga o de Meta | `MSG.errorConsulta` |
+
+Siempre termina con "¿otra consulta?". Verificado en vivo: 200, empleado activo, PDF de 90 KB descargado y válido.
 
 ## 15. Endpoints de Buk (referencia para ETL)
 
@@ -593,10 +642,9 @@ Túnel local: Kiro/VS Code → Ports → `3010` → visibilidad **Public**; la U
 | # | Tema | Responsable |
 |---|---|---|
 | 1 | Endpoint de validación (contrato §9) y activar `VALERI_VALIDACION=etl` | ETL + Bot |
-| 2 | Ruta y contrato del POST de solicitud de vacaciones; confirmar `percent_day` y si queda aprobada o pendiente | ETL |
-| 3 | Festivos de Colombia en el conteo y en el calendario (`unavailable-dates`); opción: exponer `GET /vacations/business_days` | ETL + Bot |
+| 2 | **`POST /vacaciones` responde `404 "No encontrado: Employee"` para un empleado activo** que sí encuentran `GET /vacaciones/{cédula}` (saldo) y `POST /certificado-laboral` (certificado generado). Falla con su cédula y con su id de Buk; con otra cédula la creación sí funcionó. Revisar en ETL / Buk qué tiene distinto ese empleado (por ejemplo, su política de vacaciones). Después, confirmar con la primera respuesta real que `working_days` y `calendar_days` coinciden con lo calculado | ETL + RR. HH. + Bot |
+| 3 | El cuerpo de Buk se llama `approved_vacation`: confirmar si la vacación queda **aprobada directamente** o pendiente de RR. HH. | ETL + RR. HH. |
 | 4 | Evitar cruces con solicitudes existentes (`GET /vacations/requested`) | ETL + Bot |
-| 5 | Datos del certificado laboral y plantilla de RR. HH. | ETL + RR. HH. |
 | 6 | "Hablar con agente": a dónde se transfiere | Negocio |
 | 7 | Prueba completa por WhatsApp de las tres opciones conectadas | Bot |
 | 8 | Token permanente y `META_APP_SECRET` | Meta / TI |

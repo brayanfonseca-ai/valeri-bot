@@ -125,18 +125,24 @@ Si ese mes todavía no tiene comprobante (por ejemplo, aún no se ha liquidado l
    - Si tienes muchos días, al final de la lista está **Más días ➡️** para ver más cantidades, y **⬅️ Días anteriores** para volver.
 4. Toca **Elegir fecha**: se abre un **calendario**. Toca el día en que empiezas tus vacaciones y luego **Continuar**.
    - Puedes elegir desde hoy hasta un año adelante.
-   - Los **domingos aparecen bloqueados**, porque no son días hábiles.
+   - Los **domingos y festivos aparecen bloqueados**, porque no son días hábiles.
    - Si tu WhatsApp no muestra el calendario, Valeri te pedirá la fecha con listas: primero el año, luego el mes y luego el día.
-5. Valeri calcula sola **cuándo terminan** tus vacaciones, contando tus días sin los domingos, y te muestra un resumen. Por ejemplo, si pides 4 días desde el jueves 12 de noviembre:
-   - Inicias: jueves 12 de noviembre
-   - Terminas: lunes 16 de noviembre (el domingo 15 no se cuenta)
-   - Regresas a trabajar: martes 17 de noviembre
+5. Valeri te muestra lo que vas a pedir: los **días hábiles** y la **fecha de inicio**. Todavía no se ha enviado nada.
 6. Toca un botón:
-   - **Confirmar**: envías la solicitud.
+   - **Confirmar**: se envía tu solicitud a Buk.
    - **Editar fecha**: eliges otra fecha de inicio (se mantienen los mismos días).
    - **Cancelar**: no se envía nada.
+7. Si confirmaste, Valeri te dice *"¡Tu solicitud de vacaciones ha sido exitosa!"* y te muestra lo que **quedó registrado en Buk**: días hábiles, días calendario, cuándo inicias, cuándo terminas y cuándo regresas. Los domingos y festivos no se cuentan. Por ejemplo, 4 días desde el jueves 12 de noviembre de 2026 terminan el martes 17, porque el domingo 15 y el lunes 16 (festivo) no se cuentan.
+   - Si Buk registró algo distinto a lo que pediste, Valeri te avisa.
+   - Si Buk no acepta la solicitud, Valeri te dice el motivo y no se registra nada.
 
-> 🚧 Por ahora Valeri arma tu solicitud pero **todavía no la envía a Recursos Humanos**. Muy pronto quedará conectada.
+### 📑 Certificado laboral
+
+1. En el menú elige **Certificado laboral**.
+2. Valeri te dice *"Estoy generando tu certificado laboral"*. Puede tardar unos segundos.
+3. Recibes tu certificado como un **archivo PDF** dentro del chat. Incluye tu nombre, cédula, cargo, fecha de ingreso y tipo de contrato (no incluye el salario).
+
+Si en Buk faltan algunos de tus datos (por ejemplo, el cargo), Valeri te pedirá comunicarte con **Recursos Humanos** para que los completen.
 
 > 💡 **Siempre igual:** cada vez que termina una consulta (comprobante, vacaciones o cualquier otra opción), Valeri te hace esta misma pregunta con los tres botones.
 

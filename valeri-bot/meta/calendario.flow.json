@@ -10,7 +10,8 @@
         "dias": { "type": "string", "__example__": "4" },
         "texto": { "type": "string", "__example__": "Elige el día en que inicias tus 4 días de vacaciones." },
         "min_fecha": { "type": "string", "__example__": "2026-11-10" },
-        "max_fecha": { "type": "string", "__example__": "2027-11-10" }
+        "max_fecha": { "type": "string", "__example__": "2027-11-10" },
+        "festivos": { "type": "array", "items": { "type": "string" }, "__example__": ["2026-11-16", "2026-12-08"] }
       },
       "layout": {
         "type": "SingleColumnLayout",
@@ -31,8 +32,9 @@
                 "min-date": "${data.min_fecha}",
                 "max-date": "${data.max_fecha}",
                 "include-days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+                "unavailable-dates": "${data.festivos}",
                 "required": true,
-                "helper-text": "Los domingos no son días hábiles"
+                "helper-text": "Domingos y festivos no son hábiles"
               },
               {
                 "type": "Footer",

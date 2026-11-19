@@ -1,5 +1,17 @@
 import type { MetaProvider } from '@builderbot/provider-meta'
-import { aniosInicio, diaCorto, diasInicio, fecha, fechaFin, fechaIso, fechaLarga, inicioPermitido, MESES_LARGOS, mesesInicio, siguienteHabil } from './fechas'
+import {
+  aniosInicio,
+  diaCorto,
+  diasCalendario,
+  diasInicio,
+  fecha,
+  fechaFin,
+  fechaIso,
+  fechaLarga,
+  inicioPermitido,
+  MESES_LARGOS,
+  mesesInicio,
+} from './fechas'
 import { MSG } from './mensajes'
 import { enviarBotones, enviarLista, filaVolverMenu, MESES, paginarFilas, type FilaLista } from './menu'
 import { esBoton } from './validadores'
@@ -7,8 +19,8 @@ import { esBoton } from './validadores'
 /**
  * SOLICITAR VACACIONES — flujo completo:
  *   1. Cantidad de días (1..N, N = disponibles)          -> vac_dias_{n}
- *   2. Año -> mes -> día de inicio (hoy .. hoy + 1 año, sin domingos) -> vi_*
- *   3. Resumen: fin calculado contando N días hábiles (domingos no cuentan)
+ *   2. Fecha de inicio: calendario (respaldo: año -> mes -> día), hoy .. hoy + 1 año, solo días hábiles
+ *   3. Resumen: fin calculado contando N días hábiles (domingos y festivos no cuentan) y días calendario
  *      con [Confirmar] [Editar fecha] [Cancelar]
  *   4. Confirmar -> cuerpo Buk POST /vacations -> ETL (si ETL_SOLICITUD_VACACIONES_RUTA está definida)
  *
@@ -226,7 +238,8 @@ export function inicioValido(anio: number, mes: number, dia: number, ahora = new
  * así que la solicitud que se está confirmando se guarda en memoria por wa_id.
  * Vence a los 30 minutos o si el bot se reinicia (entonces se responde MSG.solicitud.vencida).
  */
-export type SolicitudEnCurso = { dias: number; inicio: string; fin: string; creada: number }
+/** dias = días hábiles pedidos; calendario = días corridos entre inicio y fin (lo que Buk llama calendar_days). */
+export type SolicitudEnCurso = { dias: number; calendario: number; inicio: string; fin: string; creada: number }
 
 const VIGENCIA_MS = 30 * 60 * 1000
 const enCurso = new Map<string, SolicitudEnCurso>()
@@ -249,13 +262,22 @@ export function borrarEnCurso(waId: string) {
   enCurso.delete(waId)
 }
 
-/** Calcula fin y regreso, guarda la solicitud en curso y envía el resumen con 3 botones. */
+/**
+ * Guarda la solicitud en curso y envía el resumen (solo días y fecha de inicio) con 3 botones.
+ * NO llama a ninguna API: lo único que se envía a Buk sale al tocar "Confirmar".
+ * El fin y los días calendario se calculan aquí (mismas reglas que Buk: lunes a sábado sin
+ * festivos) porque el POST necesita end_date y luego se comparan con la respuesta de Buk.
+ */
 export async function enviarResumen(provider: MetaProvider, to: string, dias: number, anio: number, mes: number, dia: number) {
   const inicio = fecha(anio, mes, dia)
   const fin = fechaFin(inicio, dias)
-  guardarEnCurso(to, { dias, inicio: fechaIso(inicio), fin: fechaIso(fin) })
+  const calendario = diasCalendario(inicio, fin)
+  guardarEnCurso(to, { dias, calendario, inicio: fechaIso(inicio), fin: fechaIso(fin) })
+  // Fin y días calendario se calculan para el end_date que se envía a Buk y para compararlos
+  // con su respuesta, pero NO se muestran antes de confirmar.
   const b = MSG.botonesSolicitud
-  await enviarBotones(provider, to, MSG.solicitud.resumen(dias, fechaLarga(inicio), fechaLarga(fin), fechaLarga(siguienteHabil(fin))), [
+  const cuerpo = MSG.solicitud.resumen({ dias, inicio: fechaLarga(inicio) })
+  await enviarBotones(provider, to, cuerpo, [
     { id: 'sol_confirmar', titulo: b.confirmar },
     { id: 'sol_editar', titulo: b.editar },
     { id: 'sol_cancelar', titulo: b.cancelar },

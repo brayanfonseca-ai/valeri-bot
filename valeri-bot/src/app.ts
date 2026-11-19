@@ -1,7 +1,9 @@
 // Debe ir de primero: añade la CA corporativa antes de crear cualquier cliente HTTP.
 import './tls-setup'
 
+import { appendFileSync, mkdirSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { dirname, resolve } from 'node:path'
 import { createBot, createFlow, createProvider, MemoryDB } from '@builderbot/bot'
 import { MetaProvider } from '@builderbot/provider-meta'
 import { config } from './config'
@@ -32,6 +34,13 @@ async function main() {
     database: adapterDB,
   })
 
+  // Captura TEMPORAL del JSON crudo que envía Meta (solo con VALERI_CAPTURA_WEBHOOK=true).
+  // Se guarda en data/captura_webhook.jsonl (fuera de git) con números enmascarados.
+  if (process.env.VALERI_CAPTURA_WEBHOOK?.trim() === 'true') {
+    activarCapturaWebhook(adapterProvider)
+    console.warn('[valeri-bot] CAPTURA DE WEBHOOK ACTIVA: data/captura_webhook.jsonl')
+  }
+
   // Health check para monitoreo (guía 01 §1).
   adapterProvider.server.get('/health', (_req: IncomingMessage, res: ServerResponse) => {
     res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -54,6 +63,45 @@ async function main() {
   if (!config.meta.appSecret) {
     console.warn('[valeri-bot] META_APP_SECRET no está definido: no se valida la firma de los webhooks.')
   }
+}
+
+/** Enmascara números largos (cédulas, teléfonos, wa_id): deja solo los últimos 4 dígitos. */
+function enmascarar(valor: unknown): unknown {
+  if (typeof valor === 'string') {
+    // response_json de un Flow viene como texto JSON: se enmascara por dentro y se deja como texto.
+    if (valor.trim().startsWith('{')) {
+      try {
+        return JSON.stringify(enmascarar(JSON.parse(valor)))
+      } catch {
+        /* no era JSON */
+      }
+    }
+    return valor.replace(/\d{7,}/g, (n) => '*'.repeat(n.length - 4) + n.slice(-4))
+  }
+  if (Array.isArray(valor)) return valor.map(enmascarar)
+  if (valor && typeof valor === 'object') {
+    return Object.fromEntries(Object.entries(valor).map(([k, v]) => [k, enmascarar(v)]))
+  }
+  return valor
+}
+
+function activarCapturaWebhook(provider: MetaProvider) {
+  const archivo = resolve(process.cwd(), 'data', 'captura_webhook.jsonl')
+  mkdirSync(dirname(archivo), { recursive: true })
+  const server = provider.server as unknown as {
+    use: (fn: (req: IncomingMessage & { body?: unknown }, res: ServerResponse, next: () => void) => void) => void
+  }
+  server.use((req, _res, next) => {
+    try {
+      if (req.method === 'POST' && (req.url ?? '').startsWith('/webhook')) {
+        const linea = { recibido: new Date().toISOString(), body: req.body === undefined ? '(sin body parseado)' : enmascarar(req.body) }
+        appendFileSync(archivo, JSON.stringify(linea) + '\n')
+      }
+    } catch (error) {
+      console.error('[captura] no se pudo guardar:', error instanceof Error ? error.message : error)
+    }
+    next()
+  })
 }
 
 main().catch((error) => {

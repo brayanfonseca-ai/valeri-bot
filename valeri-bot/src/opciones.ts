@@ -14,7 +14,8 @@
  * | (calendario, nfm_reply)     | Fecha de inicio elegida en el calendario -> resumen (atenderCalendario) |
  * | vi_a / vi_mp / vi_m / vi_dp | RESPALDO del calendario: año, páginas y mes de inicio            |
  * | vi_d_{n}_{AAAA}_{M}_{D}     | Día de inicio -> resumen con fin calculado (sin domingos) + [Confirmar] [Editar fecha] [Cancelar] (atenderResumen) |
- * | certificado, agente         | "en construcción" -> "¿otra consulta?"                          |
+ * | certificado                 | ETL POST /certificado-laboral {cedula} -> PDF -> Meta media -> documento -> "¿otra consulta?" |
+ * | agente                      | "en construcción" -> "¿otra consulta?"                          |
  * | volver_menu                 | Última fila de toda lista secundaria: vuelve al menú principal  |
  *
  * REGLA: todo proceso que termina (comprobante entregado o no, vacaciones, opciones
@@ -28,7 +29,11 @@ import type { MetaProvider } from '@builderbot/provider-meta'
 import {
   armarSolicitudVacaciones,
   crearSolicitudVacaciones,
+  leerMotivoRechazo,
+  leerVacacionRegistrada,
+  type VacacionRegistrada,
   descargarPdf,
+  obtenerCertificado,
   obtenerComprobante,
   obtenerVacaciones,
   solicitudVacacionesHabilitada,
@@ -49,7 +54,18 @@ import {
   OPCIONES_MENU,
 } from './menu'
 import { obtenerRegistro } from './registros'
-import { aniosInicio, fechaIso, fechaLarga, inicioPermitido, leerFechaIso, mesesInicio, ventanaInicio } from './fechas'
+import {
+  aniosInicio,
+  diasCalendario,
+  fechaIso,
+  fechaLarga,
+  festivosEntre,
+  inicioPermitido,
+  leerFechaIso,
+  mesesInicio,
+  siguienteHabil,
+  ventanaInicio,
+} from './fechas'
 import { enviarCalendario } from './formulario'
 import {
   borrarEnCurso,
@@ -65,6 +81,7 @@ import {
   obtenerEnCurso,
   type RespuestaResumen,
   type SeleccionInicio,
+  type SolicitudEnCurso,
 } from './solicitud'
 import { esBoton } from './validadores'
 
@@ -144,6 +161,11 @@ export async function atenderSeleccion(id: string, waId: string, provider: MetaP
       await atenderVacaciones(registro.cedula, waId, enviar)
       await enviarOtraConsulta(provider, waId)
       return 'nada'
+    case 'certificado': {
+      const entregado = await atenderCertificado(registro.cedula, waId, provider, enviar)
+      await enviarOtraConsulta(provider, waId, entregado ? MSG.certificado.entregado : undefined)
+      return 'nada'
+    }
     case 'solicitar_vacaciones':
       if (!(await iniciarSolicitud(registro.cedula, waId, provider, enviar))) await enviarOtraConsulta(provider, waId)
       return 'nada'
@@ -160,7 +182,9 @@ export async function atenderSeleccion(id: string, waId: string, provider: MetaP
 
 /** Registra el error técnico en consola (sin datos personales) y avisa al usuario. */
 async function falla(operacion: string, waId: string, error: Pick<ErrorEtl, 'estado' | 'detalle'>, enviar: Enviar) {
-  console.error(`[etl] ${operacion} falló para ${oculto(waId)}: estado ${error.estado} ${error.detalle}`)
+  // El detalle de ETL puede traer la URL de Buk con la cédula: se enmascaran los números largos.
+  const detalle = String(error.detalle ?? '').replace(/\d{5,}/g, (n) => `***${n.slice(-3)}`)
+  console.error(`[etl] ${operacion} falló para ${oculto(waId)}: estado ${error.estado} ${detalle}`)
   await enviar(MSG.errorConsulta)
 }
 
@@ -247,12 +271,65 @@ export async function atenderOtraConsulta(
  * varios tipos (legales, progresivas...), se suman. Si falla, avisa al usuario y devuelve null.
  */
 async function consultarSaldo(cedula: string, waId: string, enviar: Enviar): Promise<number | null> {
+  return (await consultarSaldoEId(cedula, waId, enviar))?.saldo ?? null
+}
+
+/**
+ * Saldo de vacaciones y el ID DEL EMPLEADO EN BUK (employee_id de la respuesta de /vacaciones/{cédula}).
+ * El POST de la solicitud necesita el id de Buk: con la cédula Buk responde 404 "No encontrado: Employee"
+ * (verificado en vivo). idBuk es null si ETL no lo devuelve.
+ */
+async function consultarSaldoEId(cedula: string, waId: string, enviar: Enviar): Promise<{ saldo: number; idBuk: number | null } | null> {
   const r = await obtenerVacaciones(cedula, new Date())
   if (!r.ok) {
     await falla('vacaciones', waId, r, enviar)
     return null
   }
-  return (r.datos.vacations ?? []).reduce((total, v) => total + (typeof v.stock === 'number' ? v.stock : 0), 0)
+  const saldo = (r.datos.vacations ?? []).reduce((total, v) => total + (typeof v.stock === 'number' ? v.stock : 0), 0)
+  const id = Number(r.datos.employee_id)
+  return { saldo, idBuk: Number.isInteger(id) && id > 0 ? id : null }
+}
+
+/**
+ * Certificado laboral: ETL POST /certificado-laboral {cedula} entrega una URL de S3 que el
+ * usuario NUNCA ve. El bot descarga el PDF, lo sube a Meta y lo envía como documento.
+ * Devuelve true si se entregó el PDF.
+ */
+async function atenderCertificado(cedula: string, waId: string, provider: MetaProvider, enviar: Enviar): Promise<boolean> {
+  await enviar(MSG.certificado.buscando)
+
+  const r = await obtenerCertificado(cedula)
+  if (!r.ok) {
+    if (r.estado === 404) await enviar(MSG.certificado.noEncontrado)
+    else if (r.estado === 422) {
+      console.error(`[certificado] ${oculto(waId)}: Buk sin datos suficientes: ${leerMotivoRechazo(r.detalle) ?? r.detalle}`)
+      await enviar(MSG.certificado.datosIncompletos)
+    } else await falla('certificado', waId, r, enviar)
+    return false
+  }
+  if (!r.datos.found || !r.datos.download_url) {
+    await enviar(MSG.certificado.noEncontrado)
+    return false
+  }
+
+  const pdf = await descargarPdf(r.datos.download_url)
+  if (!pdf.ok) {
+    await falla('descarga del certificado', waId, pdf, enviar)
+    return false
+  }
+
+  const envio = await enviarPdf(provider, waId, {
+    contenido: pdf.contenido,
+    nombre: 'Certificado_laboral.pdf',
+    pie: MSG.certificado.pie,
+  })
+  if (!envio.ok) {
+    await falla('envío del certificado a Meta', waId, { estado: 0, detalle: envio.detalle }, enviar)
+    return false
+  }
+
+  console.log(`[certificado] enviado a ${oculto(waId)}`)
+  return true
 }
 
 /** Días de vacaciones pendientes a la fecha de HOY. Se muestra solo el número (stock). */
@@ -309,7 +386,13 @@ async function elegirDias(dias: number, cedula: string, waId: string, provider: 
  */
 async function pedirFechaInicio(dias: number, waId: string, provider: MetaProvider) {
   const { desde, hasta } = ventanaInicio()
-  const enviado = await enviarCalendario(provider, waId, { dias, minFecha: fechaIso(desde), maxFecha: fechaIso(hasta) })
+  const enviado = await enviarCalendario(provider, waId, {
+    dias,
+    minFecha: fechaIso(desde),
+    maxFecha: fechaIso(hasta),
+    // Festivos bloqueados en el calendario (los domingos los bloquea include-days).
+    festivos: festivosEntre(desde, hasta),
+  })
   if (!enviado) await enviarAniosInicio(provider, waId, dias)
 }
 
@@ -396,12 +479,12 @@ export async function atenderResumen(
   }
 
   // Confirmar: el saldo pudo cambiar desde que eligió los días.
-  const saldo = await consultarSaldo(registro.cedula, waId, enviar)
-  if (saldo === null) {
+  const consulta = await consultarSaldoEId(registro.cedula, waId, enviar)
+  if (consulta === null) {
     await enviarOtraConsulta(provider, waId)
     return 'nada'
   }
-  const max = diasSolicitables(saldo)
+  const max = diasSolicitables(consulta.saldo)
   if (sol.dias > max) {
     borrarEnCurso(waId)
     if (max === 0) {
@@ -426,17 +509,79 @@ export async function atenderResumen(
     return 'nada'
   }
 
+  // La solicitud en curso ya se borró: un segundo toque en "Confirmar" responde "ya no está activa"
+  // y no crea una segunda vacación.
   const r = await crearSolicitudVacaciones(cuerpo)
   if (!r.ok) {
-    await falla('solicitud de vacaciones', waId, r, enviar)
+    if (r.estado === 400 || r.estado === 422) {
+      // Buk (o ETL) rechazó los datos: se muestra el motivo, que viene de Buk.
+      const motivo = leerMotivoRechazo(r.detalle)
+      console.error(`[solicitud] ${oculto(waId)} rechazada (estado ${r.estado}): ${traza}. Motivo: ${motivo ?? r.detalle}`)
+      await enviar(MSG.solicitud.rechazada(motivo))
+    } else {
+      await falla('solicitud de vacaciones', waId, r, enviar)
+    }
     await enviarOtraConsulta(provider, waId)
     return 'nada'
   }
-  console.log(`[solicitud] ${oculto(waId)} enviada a ETL: ${traza}`)
-  const inicio = leerFechaIso(sol.inicio)
-  await enviar(MSG.solicitud.enviada(sol.dias, inicio ? fechaLarga(inicio) : sol.inicio))
+
+  console.log(`[solicitud] ${oculto(waId)} registrada en Buk: ${traza}`)
+  await informarRegistrada(sol, r.datos, waId, enviar)
   await enviarOtraConsulta(provider, waId)
   return 'nada'
+}
+
+/**
+ * Muestra lo que REGISTRÓ Buk (respuesta de POST /vacations: working_days, calendar_days,
+ * start_date, end_date) y lo compara con lo que se le mostró al empleado en el resumen.
+ * Si algo no coincide, se le avisa y se deja en el log para revisarlo.
+ */
+async function informarRegistrada(sol: SolicitudEnCurso, datos: unknown, waId: string, enviar: Enviar) {
+  const buk = leerVacacionRegistrada(datos)
+  if (!buk) {
+    // 2xx sin el formato esperado: quedó creada, se informa con lo calculado por el bot.
+    console.error(`[solicitud] ${oculto(waId)}: respuesta 2xx sin "vacation" reconocible: ${JSON.stringify(datos).slice(0, 300)}`)
+  }
+
+  const inicio = leerFechaIso(buk?.start_date ?? sol.inicio)
+  const fin = leerFechaIso(buk?.end_date ?? sol.fin)
+  const habiles = buk?.working_days ?? sol.dias
+  const calendario = buk?.calendar_days ?? (inicio && fin ? diasCalendario(inicio, fin) : sol.calendario)
+  const formato = (n: number) => n.toLocaleString('es-CO', { maximumFractionDigits: 2 })
+
+  await enviar(
+    MSG.solicitud.enviada({
+      habiles: formato(habiles),
+      calendario: formato(calendario),
+      inicio: inicio ? fechaLarga(inicio) : (buk?.start_date ?? sol.inicio),
+      fin: fin ? fechaLarga(fin) : (buk?.end_date ?? sol.fin),
+      regreso: fin ? fechaLarga(siguienteHabil(fin)) : '—',
+    }),
+  )
+
+  if (!buk) return
+  const diferencias = compararConBuk(sol, buk)
+  if (diferencias.length) {
+    console.error(`[solicitud] ${oculto(waId)}: Buk registró distinto a lo calculado: ${diferencias.join('; ')}`)
+    await enviar(MSG.solicitud.diferencia(diferencias.join('; ')))
+  }
+  if (buk.id !== null || buk.status) {
+    console.log(`[solicitud] ${oculto(waId)}: vacación Buk id ${buk.id ?? '?'} estado ${buk.status ?? '?'}`)
+  }
+}
+
+/** Diferencias entre lo mostrado en el resumen y lo que registró Buk (texto para el empleado). */
+export function compararConBuk(sol: Pick<SolicitudEnCurso, 'dias' | 'calendario' | 'inicio' | 'fin'>, buk: VacacionRegistrada): string[] {
+  const d: string[] = []
+  const fechaTexto = (iso: string) => {
+    const f = leerFechaIso(iso)
+    return f ? fechaLarga(f) : iso
+  }
+  if (buk.working_days !== null && buk.working_days !== sol.dias) d.push(`días hábiles ${buk.working_days} (pediste ${sol.dias})`)
+  if (buk.calendar_days !== null && buk.calendar_days !== sol.calendario) d.push(`días calendario ${buk.calendar_days} (calculé ${sol.calendario})`)
+  if (buk.start_date !== sol.inicio) d.push(`inicio ${fechaTexto(buk.start_date)} (elegiste ${fechaTexto(sol.inicio)})`)
+  if (buk.end_date !== sol.fin) d.push(`fin ${fechaTexto(buk.end_date)} (calculé ${fechaTexto(sol.fin)})`)
+  return d
 }
 
 /** 2.08 -> "2,08"; 4 -> "4"; 0 -> "0". */

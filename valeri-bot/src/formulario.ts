@@ -67,15 +67,15 @@ export function leerFormulario(ctx: unknown): DatosFormulario | null | undefined
 export const TIPO_CALENDARIO = 'vacaciones_inicio'
 
 /**
- * Envía el botón que abre el calendario. Fecha mínima, máxima y días van en
- * flow_action_payload.data (el calendario bloquea domingos con include-days).
+ * Envía el botón que abre el calendario. Fecha mínima, máxima, días y festivos van en
+ * flow_action_payload.data. El calendario bloquea domingos (include-days) y festivos (unavailable-dates).
  * Devuelve false si no hay Flow configurado o Meta rechazó el envío: quien llama
  * debe usar las listas año -> mes -> día como respaldo.
  */
 export async function enviarCalendario(
   provider: MetaProvider,
   to: string,
-  datos: { dias: number; minFecha: string; maxFecha: string },
+  datos: { dias: number; minFecha: string; maxFecha: string; festivos: string[] },
 ): Promise<boolean> {
   if (!config.flowCalendario.id) return false
   const c = MSG.calendario
@@ -104,6 +104,8 @@ export async function enviarCalendario(
               texto: c.texto(datos.dias),
               min_fecha: datos.minFecha,
               max_fecha: datos.maxFecha,
+              // Festivos de Colombia en la ventana: el calendario los muestra bloqueados.
+              festivos: datos.festivos,
             },
           },
         },

@@ -176,7 +176,8 @@ export const MSG = {
     preguntaMes: (anio: number) => `Elige el *mes* en que inicias (${anio}):`,
     botonMeses: 'Ver meses', // 9
     descMes: (anio: number) => `Iniciar en ${anio}`,
-    preguntaDia: (mes: string, anio: number) => `Elige el *día* en que inicias (${mes} ${anio}).\nLos domingos no aparecen porque no son días hábiles.`,
+    preguntaDia: (mes: string, anio: number) =>
+      `Elige el *día* en que inicias (${mes} ${anio}).\nLos domingos y festivos no aparecen porque no son días hábiles.`,
     botonDias: 'Ver fechas', // 10
     masMeses: 'Más meses ➡️',
     masMesesDesc: 'Ver los meses siguientes',
@@ -188,25 +189,50 @@ export const MSG = {
     fechasAnterioresDesc: 'Ver los días anteriores del mes',
 
     // ── Resumen y confirmación ──
-    resumen: (dias: number, inicio: string, fin: string, regreso: string) =>
+    /**
+     * Antes de confirmar: SOLO lo que eligió el empleado (días y fecha de inicio). Todavía no se ha
+     * enviado nada a Buk; la fecha fin, los días calendario y el regreso se muestran DESPUÉS, con
+     * los datos que devuelve Buk (MSG.solicitud.enviada).
+     */
+    resumen: (r: { dias: number; inicio: string }) =>
       [
         '📋 *Revisa tu solicitud de vacaciones:*',
         '',
-        `• Días hábiles: *${dias}*`,
-        `• Inicias: *${inicio}*`,
-        `• Terminas: *${fin}*`,
-        `• Regresas a trabajar: *${regreso}*`,
+        `• Días hábiles a solicitar: *${r.dias}*`,
+        `• Fecha de inicio: *${r.inicio}*`,
         '',
-        '_Los domingos no se cuentan como días de vacaciones._',
+        '_Los domingos y festivos no se cuentan como días de vacaciones._',
         '',
         '¿Confirmas tu solicitud?',
       ].join('\n'),
     /** Tocó un botón del resumen, pero ya no hay solicitud en curso (pasó el tiempo o se reinició el bot). */
     vencida: 'Esa solicitud ya no está activa ⏱️. Empecemos de nuevo desde *Solicitar vacaciones* en el menú.',
     cancelada: 'Listo, cancelé la solicitud. No se envió nada a Recursos Humanos.',
-    /** ETL recibió la solicitud. */
-    enviada: (dias: number, inicio: string) =>
-      `✅ ¡Listo! Envié tu solicitud de *${dias === 1 ? '1 día' : `${dias} días`}* de vacaciones desde el *${inicio}*. Recursos Humanos la revisará.`,
+    /** Buk registró la vacación. Se muestran los datos QUE DEVOLVIÓ BUK (no los calculados por el bot). */
+    enviada: (r: { habiles: string; calendario: string; inicio: string; fin: string; regreso: string }) =>
+      [
+        '✅ *¡Tu solicitud de vacaciones ha sido exitosa!*',
+        '',
+        `• Días hábiles: *${r.habiles}*`,
+        `• Días calendario: *${r.calendario}*`,
+        `• Inicias: *${r.inicio}*`,
+        `• Terminas: *${r.fin}*`,
+        `• Regresas a trabajar: *${r.regreso}*`,
+      ].join('\n'),
+    /** Buk registró algo distinto de lo que el bot le mostró al empleado (días o fechas). */
+    diferencia: (detalle: string) =>
+      [
+        `⚠️ Buk registró tus vacaciones con una diferencia frente a lo que solicitaste: ${detalle}.`,
+        'Los datos de arriba son los que quedaron en Buk. Si necesitas ajustarlos, comunícate con *Recursos Humanos*.',
+      ].join('\n'),
+    /** Buk o ETL rechazaron los datos (400 / 422). */
+    rechazada: (motivo: string | null) =>
+      [
+        '❌ Buk no aceptó tu solicitud de vacaciones.',
+        ...(motivo ? [`Motivo: _${motivo}_`] : []),
+        '',
+        'No se registró nada. Puedes intentarlo con otra fecha o comunicarte con *Recursos Humanos*.',
+      ].join('\n'),
     /** ETL aún no publica el endpoint: la solicitud se armó pero no se envió. */
     sinEnvio: [
       '📝 Tu solicitud quedó lista.',
@@ -223,9 +249,10 @@ export const MSG = {
     boton: 'Elegir fecha', // 12
     /** Texto dentro de la ventana del calendario. */
     texto: (dias: number) =>
-      `Elige el día en que inicias tus ${dias === 1 ? '1 día' : `${dias} días`} de vacaciones. Puedes elegir desde hoy hasta un año adelante.`,
-    /** La fecha elegida no es válida (domingo, fuera de la ventana o ilegible). */
-    fechaNoValida: 'Esa fecha no se puede usar para iniciar vacaciones 📅 (debe ser de lunes a sábado, desde hoy y hasta un año adelante). Elige otra, por favor.',
+      `Elige el día en que inicias tus ${dias === 1 ? '1 día' : `${dias} días`} de vacaciones. Puedes elegir desde hoy hasta un año adelante. Los domingos y festivos están bloqueados.`,
+    /** La fecha elegida no es válida (domingo, festivo, fuera de la ventana o ilegible). */
+    fechaNoValida:
+      'Esa fecha no se puede usar para iniciar vacaciones 📅 (debe ser un día hábil: de lunes a sábado, sin festivos, desde hoy y hasta un año adelante). Elige otra, por favor.',
   },
 
   /** Botones del resumen de la solicitud (≤ 20 caracteres; distintos de todos los demás botones). */
@@ -233,6 +260,25 @@ export const MSG = {
     confirmar: 'Confirmar', // 9
     editar: 'Editar fecha', // 12
     cancelar: 'Cancelar', // 8
+  },
+
+  /** Certificado laboral (PDF sin salario). */
+  certificado: {
+    buscando: '⏳ Estoy generando tu certificado laboral, dame un momento...',
+    /** Texto que acompaña al PDF. */
+    pie: '📄 Tu certificado laboral de Transportes Vigía.',
+    /** Va dentro de MSG.otraConsulta después del PDF. */
+    entregado: 'Tu certificado laboral se generó correctamente.',
+    /** 422: Buk no tiene cargo, fecha de inicio, tipo de contrato o fecha de retiro. */
+    datosIncompletos: [
+      'No pude generar tu certificado laboral porque en Buk faltan algunos de tus datos (cargo, fecha de ingreso o tipo de contrato) 📋',
+      'Por favor comunícate con *Recursos Humanos* para que los completen.',
+    ].join('\n'),
+    /** 404: la cédula no corresponde a un empleado en Buk. */
+    noEncontrado: [
+      'No encontré tu información en Buk para generar el certificado 🔎',
+      'Por favor comunícate con *Recursos Humanos*.',
+    ].join('\n'),
   },
 
   vacaciones: {

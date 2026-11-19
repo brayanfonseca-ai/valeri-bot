@@ -92,6 +92,31 @@ export function fechaEtl(fecha = new Date()): string {
   return `${dd}-${mm}-${fecha.getFullYear()}`
 }
 
+/** Respuesta de POST /certificado-laboral (Swagger 1.5.0). Misma forma que el comprobante. */
+export interface CertificadoEtl {
+  cedula: string
+  employee_id: number
+  full_name?: string
+  /** Si no es "activo", el certificado indica desde y hasta. */
+  status?: string
+  found: boolean
+  filename: string
+  content_type: string
+  size_bytes: number
+  s3_key: string
+  /** URL prefirmada de S3 (60 min). Solo para uso interno del bot. */
+  download_url: string
+  expires_in: number
+}
+
+/**
+ * Certificado laboral SIN salario (PDF). Único parámetro: la cédula.
+ * 404 = no existe el empleado; 422 = Buk no tiene cargo, fecha de inicio, tipo de contrato o fecha de retiro.
+ */
+export function obtenerCertificado(cedula: string) {
+  return llamarEtl<CertificadoEtl>('/certificado-laboral', undefined, { cedula })
+}
+
 /** Comprobante de pago (nómina) de un año y mes. 404 = no existe para ese periodo. */
 export function obtenerComprobante(cedula: string, year: number, month: number) {
   return llamarEtl<ComprobanteEtl>(`/extracto/${encodeURIComponent(cedula)}`, { year, month, format: 'pdf' })
@@ -107,7 +132,10 @@ export function obtenerVacaciones(cedula: string, fecha = new Date()) {
  * (ETL lo está construyendo; se ajusta cuando publique su contrato).
  */
 export interface SolicitudVacacionesEtl {
-  /** La CÉDULA del empleado (ETL la traduce al id de Buk). */
+  /**
+   * La CÉDULA del empleado, como número. ETL la traduce al id de Buk (una solicitud real con la
+   * cédula fue creada). Si la cédula no es de un empleado de Buk, responde 404 "No encontrado: Employee".
+   */
   employee_id: number
   /** Siempre "legales" por ahora (config.solicitudVacaciones.tipo). */
   type: string
@@ -115,12 +143,17 @@ export interface SolicitudVacacionesEtl {
   start_date: string
   /** Último día de vacaciones, YYYY-MM-DD (calculado: N días hábiles, sin domingos). */
   end_date: string
-  /** Porcentaje de la jornada: 100 = día completo. NO es la cantidad de días. */
+  /**
+   * Fracción del ÚLTIMO día que se toma como vacaciones (día completo). NO es la cantidad de días.
+   * Ojo: el contrato de Buk se contradice (texto: 0 < x ≤ 1, 1 = completo; ejemplo y Swagger de ETL: 100).
+   * Se envía VACACIONES_PERCENT_DAY (100 por defecto); si Buk lo rechaza, el motivo queda en el log.
+   */
   percent_day: number
   /** "full_working_day" = jornada completa. */
   workday_stage: string
 }
 
+/** employee_id = la CÉDULA del registro (ETL la traduce al id de Buk; verificado con una solicitud real creada). */
 export function armarSolicitudVacaciones(cedula: string, inicioIso: string, finIso: string): SolicitudVacacionesEtl {
   const s = config.solicitudVacaciones
   return {
@@ -141,6 +174,59 @@ export function solicitudVacacionesHabilitada(): boolean {
 /** POST de la solicitud de vacaciones a ETL. Solo llamar si solicitudVacacionesHabilitada(). */
 export function crearSolicitudVacaciones(solicitud: SolicitudVacacionesEtl) {
   return llamarEtl<unknown>(config.etl.rutaSolicitudVacaciones ?? '', undefined, solicitud)
+}
+
+/**
+ * Vacación que Buk registró. Contrato de Buk POST /vacations, respuesta 201:
+ *   { "vacation": { employee_id, type, start_date, end_date, working_days, calendar_days, workday_stage } }
+ * ETL la devuelve sin cambios. Por tolerancia también se acepta { data: {...} } o el objeto en la raíz.
+ */
+export interface VacacionRegistrada {
+  start_date: string
+  end_date: string
+  /** Días hábiles que Buk descontó. */
+  working_days: number | null
+  /** Días corridos (calendario) entre inicio y fin. */
+  calendar_days: number | null
+  /** Id de la vacación en Buk, si lo devuelve. */
+  id: number | null
+  /** Estado (por ejemplo "approved"), si lo devuelve. */
+  status: string | null
+}
+
+export function leerVacacionRegistrada(datos: unknown): VacacionRegistrada | null {
+  const raiz = (datos ?? {}) as Record<string, unknown>
+  const v = (raiz.vacation ?? raiz.data ?? raiz) as Record<string, unknown>
+  if (!v || typeof v !== 'object') return null
+  const texto = (x: unknown) => (typeof x === 'string' && /^\d{4}-\d{2}-\d{2}/.test(x) ? x.slice(0, 10) : null)
+  const numero = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : typeof x === 'string' && x.trim() !== '' && Number.isFinite(Number(x)) ? Number(x) : null)
+  const inicio = texto(v.start_date)
+  const fin = texto(v.end_date)
+  if (!inicio || !fin) return null
+  return {
+    start_date: inicio,
+    end_date: fin,
+    working_days: numero(v.working_days),
+    calendar_days: numero(v.calendar_days),
+    id: numero(v.id),
+    status: typeof v.status === 'string' ? v.status : null,
+  }
+}
+
+/**
+ * Motivo legible de un rechazo. Buk responde { errors: ["..."] }; ETL puede responder
+ * { error: "..." } o { message: "..." }. Devuelve null si no hay un texto útil.
+ */
+export function leerMotivoRechazo(detalle: string): string | null {
+  try {
+    const j = JSON.parse(detalle) as { errors?: unknown; error?: unknown; message?: unknown }
+    const lista = Array.isArray(j.errors) ? j.errors : j.errors && typeof j.errors === 'object' ? Object.values(j.errors).flat() : []
+    const partes = [...lista, j.error, j.message].filter((x): x is string => typeof x === 'string' && x.trim() !== '')
+    const motivo = partes.join('. ').replace(/\s+/g, ' ').trim()
+    return motivo ? motivo.slice(0, 300) : null
+  } catch {
+    return null
+  }
 }
 
 /**
