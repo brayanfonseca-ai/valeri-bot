@@ -8,14 +8,21 @@
     "build": "rollup -c",
     "start": "node --env-file=.env ./dist/app.js",
     "dev": "npm run build && npm start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prisma:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:importar-usuarios": "node --env-file=.env scripts/importar-usuarios.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock-agentcore": "3.1176.0",
+    "@aws-sdk/client-dynamodb": "3.1176.0",
     "@builderbot/bot": "1.4.4",
-    "@builderbot/provider-meta": "1.4.4"
+    "@builderbot/provider-meta": "1.4.4",
+    "@prisma/client": "5.22.0"
   },
   "devDependencies": {
     "@types/node": "24.19.2",
+    "prisma": "5.22.0",
     "rollup": "4.68.2",
     "rollup-plugin-typescript2": "0.37.0",
     "typescript": "5.9.3"

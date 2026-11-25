@@ -16,7 +16,7 @@ export const OPCIONES_MENU = [
   { id: 'dias_vacaciones', title: 'Días de vacaciones', description: 'Consulta tus días pendientes por disfrutar' },
   { id: 'solicitar_vacaciones', title: 'Solicitar vacaciones', description: 'Pide tus días de descanso' },
   { id: 'certificado', title: 'Certificado laboral', description: 'Descarga tu certificado en PDF' },
-  { id: 'agente', title: 'Hablar con agente', description: 'Te atiende un asesor de Recursos Humanos' },
+  { id: 'agente', title: 'Hablar con agente', description: 'Pregúntale al agente lo que necesites en tus palabras' },
 ] as const
 
 export type IdOpcion = (typeof OPCIONES_MENU)[number]['id']

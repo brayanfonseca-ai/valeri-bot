@@ -24,8 +24,8 @@
                 "input-type": "number",
                 "required": true,
                 "min-chars": 5,
-                "max-chars": 10,
-                "helper-text": "Solo números, sin puntos"
+                "max-chars": 15,
+                "helper-text": "Solo números, sin puntos ni espacios"
               },
               {
                 "type": "TextInput",
@@ -33,7 +33,7 @@
                 "label": "Número celular",
                 "input-type": "phone",
                 "required": true,
-                "helper-text": "10 dígitos. Ej: 3001234567"
+                "helper-text": "El registrado en la empresa. Ej: 3001234567"
               },
               {
                 "type": "Footer",

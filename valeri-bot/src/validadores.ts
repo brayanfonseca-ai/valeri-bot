@@ -12,11 +12,12 @@ const soloDigitos = (texto: string): string => (texto ?? '').replace(/\D/g, '')
 /**
  * Cédula de ciudadanía.
  * Acepta: "1023456789", "1.023.456.789", "1 023 456 789", "CC 1023456789", "C.C. 12.345.678".
- * Devuelve solo dígitos. Rango aceptado: 5 a 10 dígitos.
+ * Devuelve solo dígitos. Rango aceptado: 5 a 15 dígitos (cubre cédulas de 11 dígitos
+ * y documentos numéricos más largos; igual que la ventana de registro valeri_registro_v3).
  */
 export function normalizarCedula(texto: string): Resultado {
   const digitos = soloDigitos(texto)
-  if (digitos.length < 5 || digitos.length > 10) return { ok: false }
+  if (digitos.length < 5 || digitos.length > 15) return { ok: false }
   if (/^0+$/.test(digitos)) return { ok: false }
   return { ok: true, valor: digitos.replace(/^0+/, '') }
 }
@@ -25,13 +26,14 @@ export function normalizarCedula(texto: string): Resultado {
  * Celular colombiano.
  * Acepta: "3001234567", "300 123 4567", "300-123-4567", "(300) 1234567",
  * "+57 300 123 4567", "57 3001234567", "0057 3001234567".
- * Devuelve 10 dígitos que empiezan por 3 (sin indicativo).
+ * Devuelve 10 dígitos (sin indicativo). No se exige que empiece por 3: la validación
+ * real es que coincida con el teléfono registrado del empleado en la base.
  */
 export function normalizarTelefono(texto: string): Resultado {
   let digitos = soloDigitos(texto)
   if (digitos.startsWith('0057')) digitos = digitos.slice(4)
   else if (digitos.length === 12 && digitos.startsWith('57')) digitos = digitos.slice(2)
-  if (!/^3\d{9}$/.test(digitos)) return { ok: false }
+  if (!/^\d{10}$/.test(digitos)) return { ok: false }
   return { ok: true, valor: digitos }
 }
 

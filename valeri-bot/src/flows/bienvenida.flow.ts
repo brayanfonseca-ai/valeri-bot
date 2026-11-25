@@ -6,7 +6,10 @@ import { enviarMenu } from '../menu'
 import { atenderCalendario, atenderOtraConsulta, atenderResumen, atenderSeleccion, esSeleccionConocida, leerOtraConsulta } from '../opciones'
 import { leerBotonResumen } from '../solicitud'
 import { obtenerRegistro } from '../registros'
-import { formatearCedula, formatearTelefono } from '../validadores'
+import { consumirCierrePorInactividad, estadoAgente, finalizarSesion } from '../sesiones'
+import { agenteDisponiblePara } from '../agente'
+import { atenderConAgente, salirModoAgente } from '../modo-agente'
+import { esBoton, formatearCedula, formatearTelefono } from '../validadores'
 import { confirmacionFlow } from './registro.flow'
 
 /**
@@ -29,8 +32,38 @@ export const bienvenidaFlow = addKeyword<MetaProvider, MemoryDB>(EVENTS.WELCOME)
   async (ctx, { provider, state, flowDynamic, gotoFlow }) => {
     console.log(`[bienvenida] mensaje entrante de ******${(ctx.from ?? '').slice(-4)}`)
 
+    // La sesión anterior se cerró por inactividad: se empieza de cero. El registro
+    // (contacts/users) es permanente, así que un empleado ya validado va directo al menú.
+    if (consumirCierrePorInactividad(ctx.from)) await state.clear()
+
     // ── Usuario autorizado: menú ───────────────────────────────────────────
-    if (obtenerRegistro(ctx.from)) {
+    if (await obtenerRegistro(ctx.from)) {
+      // ── Modo agente de IA ("Hablar con agente") ──────────────────────────
+      const estado = await estadoAgente(ctx.from)
+      if (estado?.agentMode) {
+        const c = ctx as unknown as { id_list_reply?: string; title_button_reply?: string; nfm_reply?: unknown; body?: string }
+        const interactivo = Boolean(c.id_list_reply || c.title_button_reply || c.nfm_reply)
+        const texto = String(c.body ?? '').trim()
+        const pideMenu = !interactivo && ['menú', 'menu', 'salir', 'volver'].some((p) => esBoton(texto, p))
+        if (pideMenu || !agenteDisponiblePara(ctx.from)) {
+          await salirModoAgente(ctx.from, pideMenu ? 'usuario' : 'agente_no_disponible')
+          if (pideMenu) await flowDynamic(MSG.agente.salida)
+          await enviarMenu(provider, ctx.from)
+          return
+        }
+        if (interactivo) {
+          // Eligió algo de una lista, un botón o una ventana: sale del agente y se atiende como siempre.
+          await salirModoAgente(ctx.from, 'interaccion')
+        } else if (!texto || texto.startsWith('_event_')) {
+          await flowDynamic(MSG.agente.soloTexto)
+          return
+        } else {
+          // Sin await: la cola propia del agente mantiene el orden y el flujo no queda bloqueado.
+          void atenderConAgente(ctx.from, texto, provider)
+          return
+        }
+      }
+
       // Respuesta del calendario de fecha de inicio de vacaciones (ventana).
       const calendario = leerCalendario(ctx)
       if (calendario !== undefined) {
@@ -63,6 +96,7 @@ export const bienvenidaFlow = addKeyword<MetaProvider, MemoryDB>(EVENTS.WELCOME)
           // "No, finalizar": se cierra la sesión (estado en memoria). El registro se conserva:
           // el próximo mensaje muestra el menú sin pedir datos otra vez.
           await state.clear()
+          void finalizarSesion(ctx.from)
           return
         }
         if (siguiente === 'nada') return

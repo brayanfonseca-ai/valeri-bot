@@ -15,7 +15,7 @@
  * | vi_a / vi_mp / vi_m / vi_dp | RESPALDO del calendario: año, páginas y mes de inicio            |
  * | vi_d_{n}_{AAAA}_{M}_{D}     | Día de inicio -> resumen con fin calculado (sin domingos) + [Confirmar] [Editar fecha] [Cancelar] (atenderResumen) |
  * | certificado                 | ETL POST /certificado-laboral {cedula} -> PDF -> Meta media -> documento -> "¿otra consulta?" |
- * | agente                      | "en construcción" -> "¿otra consulta?"                          |
+ * | agente                      | Modo agente de IA (modo-agente.ts) si está disponible para el número; si no, "en construcción" -> "¿otra consulta?" |
  * | volver_menu                 | Última fila de toda lista secundaria: vuelve al menú principal  |
  *
  * REGLA: todo proceso que termina (comprobante entregado o no, vacaciones, opciones
@@ -26,6 +26,8 @@
  * envió algo que el usuario debe responder (lista de años/meses o los 3 botones).
  */
 import type { MetaProvider } from '@builderbot/provider-meta'
+import { agenteDisponiblePara } from './agente'
+import { entrarModoAgente } from './modo-agente'
 import {
   armarSolicitudVacaciones,
   crearSolicitudVacaciones,
@@ -103,7 +105,7 @@ export function esSeleccionConocida(id: unknown): id is string {
 }
 
 export async function atenderSeleccion(id: string, waId: string, provider: MetaProvider, enviar: Enviar): Promise<Siguiente> {
-  const registro = obtenerRegistro(waId)
+  const registro = await obtenerRegistro(waId)
   if (!registro) return 'nada'
 
   // "🏠 Menú principal" desde cualquier lista: solo se muestra el menú.
@@ -169,6 +171,20 @@ export async function atenderSeleccion(id: string, waId: string, provider: MetaP
     case 'solicitar_vacaciones':
       if (!(await iniciarSolicitud(registro.cedula, waId, provider, enviar))) await enviarOtraConsulta(provider, waId)
       return 'nada'
+    case 'agente': {
+      // Agente de IA de AWS. Cerrado (en construcción) mientras no esté configurado o
+      // falte el control de identidad, salvo para los números de prueba.
+      if (agenteDisponiblePara(waId)) {
+        if (await entrarModoAgente(waId, provider)) return 'nada'
+        await enviar(MSG.agente.error)
+        await enviarOtraConsulta(provider, waId)
+        return 'nada'
+      }
+      const opcion = OPCIONES_MENU.find((o) => o.id === id)
+      await enviar(MSG.opcionEnConstruccion(opcion?.title ?? 'Hablar con agente'))
+      await enviarOtraConsulta(provider, waId)
+      return 'nada'
+    }
     default: {
       // solicitar_vacaciones, certificado, agente: aún en construcción.
       const opcion = OPCIONES_MENU.find((o) => o.id === id)
@@ -406,7 +422,7 @@ export async function atenderCalendario(
   provider: MetaProvider,
   enviar: Enviar,
 ): Promise<void> {
-  if (!obtenerRegistro(waId)) return
+  if (!(await obtenerRegistro(waId))) return
   const inicio = respuesta ? leerFechaIso(respuesta.fecha) : null
   if (!respuesta || !inicio || !inicioPermitido(inicio)) {
     console.log(`[calendario] fecha no válida de ${oculto(waId)}: ${respuesta?.fecha ?? '(ilegible)'}`)
@@ -454,7 +470,7 @@ export async function atenderResumen(
   provider: MetaProvider,
   enviar: Enviar,
 ): Promise<Siguiente> {
-  const registro = obtenerRegistro(waId)
+  const registro = await obtenerRegistro(waId)
   if (!registro) return 'nada'
   const sol = obtenerEnCurso(waId)
   if (!sol) {

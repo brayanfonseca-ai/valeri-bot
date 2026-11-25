@@ -1,5 +1,7 @@
 import { addKeyword, MemoryDB, utils } from '@builderbot/bot'
 import type { MetaProvider } from '@builderbot/provider-meta'
+import { config } from '../config'
+import { consumirCierrePorInactividad, registrarIntento } from '../sesiones'
 import { enviarFormulario } from '../formulario'
 import { BOTONES, MSG } from '../mensajes'
 import { enviarMenu } from '../menu'
@@ -31,6 +33,14 @@ export const confirmacionFlow = addKeyword<MetaProvider, MemoryDB>(utils.setEven
     const waId = ctx.from
     const oculto = `******${(waId ?? '').slice(-4)}`
 
+    // La sesión se cerró por inactividad mientras esperaba esta confirmación:
+    // se descarta lo ingresado y se vuelve a pedir el registro desde el inicio.
+    if (consumirCierrePorInactividad(waId)) {
+      await state.clear()
+      await enviarFormulario(provider, waId)
+      return endFlow()
+    }
+
     if (esBoton(ctx.body, BOTONES.datosCorrectos)) {
       const cedula: string | undefined = state.get('cedula')
       const telefono: string | undefined = state.get('telefono')
@@ -42,26 +52,44 @@ export const confirmacionFlow = addKeyword<MetaProvider, MemoryDB>(utils.setEven
       }
 
       // 1. Un empleado, un número.
-      const numeroVinculado = buscarNumeroPorCedula(cedula)
+      let numeroVinculado: string | undefined
+      try {
+        numeroVinculado = await buscarNumeroPorCedula(cedula)
+      } catch (error) {
+        console.error(`[registro] error consultando vínculos de ${oculto}:`, error instanceof Error ? error.message : error)
+        void registrarIntento(waId, { documento: cedula, telefono, resultado: 'ERROR', detalle: 'consulta de vínculo' })
+        return endFlow(MSG.errorValidacion)
+      }
       if (numeroVinculado && numeroVinculado !== waId) {
         console.log(`[registro] cédula ya vinculada a otro número; rechazado ${oculto}`)
+        void registrarIntento(waId, { documento: cedula, telefono, resultado: 'CEDULA_EN_OTRO_NUMERO' })
         return endFlow(MSG.cedulaYaVinculada)
       }
 
-      // 2. Validación contra Buk (vía ETL) o modo abierto de pruebas.
+      // 2. Validación: tabla users (modo "bd"), ETL (modo "etl") o abierta (pruebas).
       const resultado = await validarEmpleado(cedula, telefono)
 
       if (resultado.estado === 'error') {
         console.error(`[registro] error validando a ${oculto}: ${resultado.detalle}`)
+        void registrarIntento(waId, { documento: cedula, telefono, resultado: 'ERROR', detalle: resultado.detalle.slice(0, 300) })
         return endFlow(MSG.errorValidacion)
       }
 
       if (resultado.estado === 'no_autorizado') {
         console.log(`[registro] no autorizado ${oculto} (motivo: ${resultado.motivo})`)
+        void registrarIntento(waId, { documento: cedula, telefono, resultado: 'NO_REGISTRADO', detalle: resultado.motivo })
         return endFlow(MSG.noAutorizado)
       }
 
-      guardarRegistro(waId, { cedula, telefono, confirmadoEn: new Date().toISOString(), idBuk: resultado.idBuk })
+      const origen = config.validacion.modo === 'etl' ? 'BUK' : config.validacion.modo === 'abierta' ? 'MANUAL' : 'CSV_TEMPORAL'
+      try {
+        await guardarRegistro(waId, { cedula, telefono, confirmadoEn: new Date().toISOString(), idBuk: resultado.idBuk }, origen)
+      } catch (error) {
+        console.error(`[registro] no se pudo guardar el registro de ${oculto}:`, error instanceof Error ? error.message : error)
+        void registrarIntento(waId, { documento: cedula, telefono, resultado: 'ERROR', detalle: 'guardar registro' })
+        return endFlow(MSG.errorValidacion)
+      }
+      void registrarIntento(waId, { documento: cedula, telefono, resultado: 'AUTORIZADO' })
       await state.update({ cedula: undefined, telefono: undefined })
       console.log(`[registro] autorizado ${oculto}`)
       await flowDynamic(MSG.autorizado)

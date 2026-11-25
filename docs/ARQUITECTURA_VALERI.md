@@ -29,6 +29,7 @@
 15. Endpoints de Buk (referencia para ETL)
 16. Operación y despliegue
 17. Pendientes
+18. Hablar con agente (agente de IA de AWS)
 
 ---
 
@@ -40,15 +41,17 @@ Valeri es la asistente de WhatsApp de **Transportes Vigía** para conductores y 
 |---|---|
 | Webhook de Meta (local, por túnel) | Funciona |
 | Registro con ventana (Flow) + confirmación con botones | Funciona |
-| Validación del empleado | Modo `abierta` activo (pruebas). Modo `etl` desarrollado y apagado: falta el endpoint de ETL |
-| Regla "un empleado, un número" | Funciona (sobre JSON) |
+| Validación del empleado | Modo **`bd` activo**: cédula y celular deben coincidir con la tabla `users` (5.870 empleados cargados del CSV temporal). Modos `abierta` (pruebas) y `etl` disponibles |
+| Regla "un empleado, un número" | Funciona (base de datos: `contacts.user_id` único) |
+| Sesiones y conversación | Funciona: todo entrante y saliente en `messages`; sesión cerrada a los 10 min sin actividad (con aviso al empleado) o con "No, finalizar" |
 | Menú principal y "¿Deseas realizar otra consulta?" | Funciona |
 | Comprobante de pago (año → mes → PDF) | Conectado a ETL `/extracto` |
 | Días de vacaciones | Conectado a ETL `/vacaciones` |
 | Solicitar vacaciones (días → calendario → resumen → confirmar → respuesta de Buk) | **Activo**: registra en Buk vía ETL `POST /vacaciones`. Falta la primera prueba real |
 | Certificado laboral (PDF sin salario) | Conectado a ETL `POST /certificado-laboral` |
-| Hablar con agente | "En construcción" |
-| Código SMS, base de datos, despliegue con PM2 | No desarrollados |
+| Hablar con agente | **Desarrollado** (agente de IA de AWS, §18). Cerrado para los colaboradores hasta que exista el control de identidad en AWS (tabla DynamoDB); abierto solo para números de prueba |
+| Base de datos `valeri_bot` (Prisma) y despliegue con PM2 | Funcionan en el servidor (procesos `valeri-bot` y `valeri-tunnel`) |
+| Código SMS | No desarrollado |
 
 Fase: **desarrollo local**. Reparto: ETL construye los endpoints hacia Buk; el bot hace la conversación; Infraestructura y Redes, el servidor y la ruta pública.
 
@@ -65,7 +68,7 @@ Fase: **desarrollo local**. Reparto: ETL construye los endpoints hacia Buk; el b
 | D5 | Puerto **3010** | 3000 (`paula-api`) y 3009 (`paula-bot`) ocupados |
 | D6 | Todo con botones, listas y ventanas; solo se escribe dentro de la ventana de registro | Menos errores |
 | D7 | Cédula y celular se capturan con un WhatsApp Flow | No se usa el número desde el que escribe el usuario (los usuarios `@` no lo exponen) |
-| D8 | Persistencia provisional en `data/registros.json` | Aún no hay base de datos |
+| D8 | Persistencia en PostgreSQL 18 (base `valeri_bot`) con Prisma 5.22; esquema en `valeri-bot/prisma/schema.prisma` y migraciones aditivas | Mismo patrón de la plataforma (Paula) |
 | D9 | Aislamiento: Valeri usa solo su app de Meta y su número | No afectar a Paula |
 | D10 | Todo el contenido visible en español | Requisito del negocio |
 | D11 | El bot no llama a Buk: todo pasa por la API de ETL | ETL guarda el token de Buk |
@@ -113,7 +116,7 @@ flowchart LR
 | Número | **+57 323 232 6150** — Phone Number ID `1344598332073548` |
 | WABA | `2550144075397020` |
 | Graph API | `v26.0` |
-| Flow de registro | `valeri_registro_v2` — `1862130361868911` — PUBLISHED — `SIGN_UP` |
+| Flow de registro | `valeri_registro_v3` — `1191643797147654` — PUBLISHED — `SIGN_UP` (cédula 5–15 dígitos). Reemplaza a `valeri_registro_v2` (`1862130361868911`, máx. 10 dígitos) |
 | Flow del calendario | `valeri_vacaciones_calendario_v2` — `2152027718731540` — PUBLISHED — `APPOINTMENT_BOOKING` (bloquea domingos y festivos) |
 
 En la cuenta de Meta de la empresa hay apps y números de otros proyectos: no usarlos con Valeri. Los tokens viven **solo** en `valeri-bot/.env` (fuera de git).
@@ -136,7 +139,16 @@ Archivo `valeri-bot/.env` (no versionado; plantilla `.env.example`). Se carga co
 | `META_FLOW_ID` | Sí | `1862130361868911` | Flow de registro |
 | `META_FLOW_DRAFT` | No (`true`) | `false` | `true` = enviar Flow en modo borrador |
 | `META_FLOW_CALENDARIO_ID` | No | `2152027718731540` | Flow del calendario. Vacía = listas año → mes → día |
-| `VALERI_VALIDACION` | No (`etl`) | `abierta` | `abierta` = todos autorizados (pruebas); `etl` = producción |
+| `VALERI_VALIDACION` | No (`bd`) | `bd` | `bd` = tabla `users` (cédula y celular deben coincidir); `abierta` = todos autorizados (pruebas); `etl` = endpoint de ETL |
+| `DATABASE_URL` | Sí | `postgresql://…@localhost:5432/valeri_bot?schema=public` | Conexión de Prisma a la base `valeri_bot` |
+| `VALERI_SESION_TIMEOUT_MIN` | No (10) | `10` | Minutos sin actividad para cerrar una sesión y avisar al empleado |
+| `AGENTE_ARN` | Para el agente | `arn:aws:bedrock-agentcore:…:harness/…` | Agente de IA (§18). Vacía = "en construcción" |
+| `AGENTE_REGION` | No (`us-east-2`) | `us-east-2` | Región del agente y de la tabla |
+| `AGENTE_TABLA_SESIONES` | No | vacía | Tabla DynamoDB del control de identidad. Vacía = agente cerrado salvo números de prueba |
+| `AGENTE_PERMITIR_SIN_CONTROL` | No (`false`) | `false` | `true` abre el agente a todos sin control de identidad (no recomendado) |
+| `AGENTE_NUMEROS_PRUEBA` | No | wa_id separados por coma | Pueden usar el agente aunque esté cerrado |
+| `AGENTE_TIMEOUT_MS` | No (90000) | `90000` | Tiempo máximo por invocación |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Para el agente | — | Credencial de AWS (usuario `scraper`). Solo en `.env` |
 | `ETL_VALIDACION_URL` | Si modo `etl` | vacía | URL completa del endpoint de validación (§9) |
 | `ETL_BASE_URL` | Sí | `https://ibs9x7piq3.execute-api.us-east-2.amazonaws.com/Prod` | Base de la API de ETL |
 | `ETL_TOKEN` | Sí | (API Key) | Cabecera `x-api-key` en todas las llamadas a ETL |
@@ -145,7 +157,7 @@ Archivo `valeri-bot/.env` (no versionado; plantilla `.env.example`). Se carga co
 | `VACACIONES_TIPO` | No (`legales`) | — | Campo `type` |
 | `VACACIONES_PERCENT_DAY` | No (`100`) | — | Campo `percent_day`: fracción del último día (día completo). Buk se contradice: texto "0 < x ≤ 1" y ejemplo "100" (§14.3) |
 | `VACACIONES_WORKDAY_STAGE` | No (`full_working_day`) | — | Campo `workday_stage` |
-| `TLS_EXTRA_CA`, `NODE_EXTRA_CA_CERTS` | No | `./certs/acronis-ca.pem` | CA del proxy corporativo (guía 00 §6) |
+| `TLS_EXTRA_CA`, `NODE_EXTRA_CA_CERTS` | **Sí en el servidor** | `./certs/acronis-ca.pem` | CA del proxy corporativo Acronis, exportada del almacén raíz de Windows. Sin ella Node falla con `fetch failed` hacia Meta y ETL. PM2 además pasa la ruta absoluta en `NODE_EXTRA_CA_CERTS` |
 
 ---
 
@@ -157,7 +169,13 @@ valeri-bot/
   meta/
     registro.flow.json      # ventana de registro (copia local del Flow)
     calendario.flow.json    # calendario de fecha de inicio (copia local del Flow)
-  data/registros.json       # empleados autorizados (fuera de git)
+  prisma/
+    schema.prisma           # modelo de datos (users, contacts, sessions, messages, auth_attempts, audit_events)
+    migrations/             # migraciones SQL aditivas (prisma migrate deploy)
+  scripts/
+    importar-usuarios.mjs   # carga el CSV temporal a la tabla users (idempotente)
+  data/base_auten_tempo.csv # base temporal de empleados autorizados (fuera de git: datos personales)
+  certs/acronis-ca.pem      # CA del proxy corporativo (fuera de git)
   src/
     app.ts                  # arranque, /health, manejo global de errores
     tls-setup.ts            # añade la CA corporativa (se importa de primero)
@@ -171,8 +189,10 @@ valeri-bot/
     fechas.ts               # ventana de inicio, domingos, fecha fin, formatos
     etl.ts                  # cliente de ETL (x-api-key) + descarga de PDF + cuerpo de la solicitud
     media.ts                # sube PDF a Meta y lo envía por media_id
-    validacion.ts           # validación del empleado (abierta / etl)
-    registros.ts            # data/registros.json
+    validacion.ts           # validación del empleado (bd / abierta / etl)
+    db.ts                   # cliente Prisma (singleton) de valeri_bot
+    registros.ts            # vínculo número de WhatsApp <-> empleado (tablas contacts + users)
+    sesiones.ts             # sesiones, histórico de mensajes, intentos de validación y auditoría
     flows/
       bienvenida.flow.ts    # entrada de todo mensaje (EVENTS.WELCOME)
       registro.flow.ts      # confirmación con botones + validación
@@ -187,7 +207,8 @@ valeri-bot/
 | `fechas.ts` | `ventanaInicio`, `inicioPermitido`, `aniosInicio`, `mesesInicio`, `diasInicio`, `fechaFin`, `siguienteHabil`, `fechaIso`, `leerFechaIso`, `fechaLarga` |
 | `etl.ts` | `llamarEtl` (GET/POST), `obtenerComprobante`, `obtenerVacaciones`, `descargarPdf`, `armarSolicitudVacaciones`, `crearSolicitudVacaciones`, `solicitudVacacionesHabilitada`, `fechaEtl` |
 | `media.ts` | `subirPdf`, `enviarPdf` |
-| `registros.ts` | `obtenerRegistro`, `buscarNumeroPorCedula`, `guardarRegistro` (lee el JSON en cada consulta) |
+| `registros.ts` | `obtenerRegistro`, `buscarNumeroPorCedula`, `guardarRegistro` (asíncronas, sobre la base) |
+| `sesiones.ts` | `registrarEntrante`, `registrarSaliente`, `finalizarSesion`, `registrarIntento`, `iniciarBarridoSesiones` (escrituras encadenadas por número; un fallo de la base nunca corta la conversación) |
 
 **Patrón de BuilderBot:** no encadenar `addAction` esperando respuestas (no esperan). Toda respuesta de lista, botón o ventana llega como **mensaje nuevo** y la atiende `bienvenidaFlow`; solo la confirmación del registro usa `addAnswer` con `capture`.
 
@@ -256,10 +277,10 @@ Flow JSON 7.2, pantalla `REGISTRO`, sin endpoint. Mensaje: encabezado "¡Hola! S
 
 | name | label | input-type | Reglas | Ayuda |
 |---|---|---|---|---|
-| `cedula` | Número de cédula | `number` | obligatorio, 5–10 | Solo números, sin puntos |
-| `telefono` | Número celular | `phone` | obligatorio | 10 dígitos. Ej: 3001234567 |
+| `cedula` | Número de cédula | `number` | obligatorio, 5–15 | Solo números, sin puntos ni espacios |
+| `telefono` | Número celular | `phone` | obligatorio | El registrado en la empresa. Ej: 3001234567 |
 
-"Continuar" (`complete`) devuelve `{cedula, telefono}` en `ctx.nfm_reply`. El bot normaliza (`validadores.ts`): cédula solo dígitos (5–10, sin ceros a la izquierda; acepta puntos, espacios y "CC"); celular de 10 dígitos que empieza por 3 (acepta `+57`, `57`, `0057`, espacios, guiones y paréntesis).
+"Continuar" (`complete`) devuelve `{cedula, telefono}` en `ctx.nfm_reply`. El bot normaliza (`validadores.ts`): cédula solo dígitos (5–15, sin ceros a la izquierda; acepta puntos, espacios y "CC"); celular de 10 dígitos (acepta `+57`, `57`, `0057`, espacios, guiones y paréntesis). No se exige que empiece por 3: la validación real es que coincida con el registrado en `users`.
 
 ### 8.2 Calendario de fecha de inicio (`meta/calendario.flow.json`)
 
@@ -281,8 +302,19 @@ Flow JSON 7.2, pantalla `FECHA_INICIO`, componente **CalendarPicker** (`mode: si
 
 | `VALERI_VALIDACION` | Comportamiento |
 |---|---|
-| `abierta` | Siempre `autorizado` (pruebas, activo hoy). Al arrancar, el log muestra **MODO PRUEBAS** |
+| `bd` | **Activo.** Busca la cédula en `users`: autorizado solo si existe, está activa y el celular registrado es **igual** al ingresado. Si no, `MSG.noAutorizado` (mismo mensaje en todos los casos, para no revelar qué dato falló): no está registrado, no puede usar los servicios, debe actualizar sus datos en Buk y comunicarse con Gestión Humana |
+| `abierta` | Siempre `autorizado` (pruebas). Al arrancar, el log muestra **MODO PRUEBAS** |
 | `etl` | Consulta `ETL_VALIDACION_URL` |
+
+Cada intento queda en `auth_attempts` (`AUTORIZADO`, `NO_REGISTRADO`, `CEDULA_EN_OTRO_NUMERO`, `ERROR`).
+
+Cargar o actualizar la base de empleados (idempotente, no borra a nadie, no imprime datos personales):
+
+```powershell
+cd valeri-bot
+npm.cmd run db:importar-usuarios            # data/base_auten_tempo.csv
+npm.cmd run db:importar-usuarios -- otra.csv
+```
 
 Contrato **provisional** (confirmar con ETL antes de activar):
 
@@ -302,7 +334,7 @@ x-api-key: {ETL_TOKEN}          Tiempo máximo: 15 s
 
 Lógica esperada en ETL: `GET /employees/{cédula}` de Buk; autorizado si `status = "activo"` y el teléfono registrado coincide.
 
-**Un empleado, un número:** antes de validar, si la cédula ya está vinculada a **otro** wa_id → `MSG.cedulaYaVinculada`. Para liberar un vínculo, borrar la entrada en `registros.json`.
+**Un empleado, un número:** antes de validar, si la cédula ya está vinculada a **otro** wa_id → `MSG.cedulaYaVinculada`. Para liberar un vínculo (cambio de celular): `UPDATE contacts SET user_id = NULL, verified_at = NULL WHERE wa_id = '<número anterior>';`
 
 ---
 
@@ -318,7 +350,7 @@ Encabezado "📋 Menú principal", cuerpo "¿En qué te puedo ayudar hoy? 😊",
 | `dias_vacaciones` | Días de vacaciones | §14.2 |
 | `solicitar_vacaciones` | Solicitar vacaciones | §14.3 |
 | `certificado` | Certificado laboral | §14.4 |
-| `agente` | Hablar con agente | "En construcción" |
+| `agente` | Hablar con agente | Agente de IA (§18). No hay atención humana: es solo el agente. "En construcción" mientras esté cerrado |
 
 Límites de Meta en listas: encabezado 60, cuerpo 1024, botón 20, título de fila 24, descripción 72, **máximo 10 filas**.
 
@@ -370,20 +402,49 @@ Cuerpo: con archivo entregado, "✅ ¡Listo! <texto>\n\n¿Deseas realizar otra c
 
 ## 12. Datos y persistencia
 
-### 12.1 `data/registros.json` (provisional)
+PostgreSQL 18 del servidor, base **`valeri_bot`**, acceso con **Prisma 5.22**. Esquema: `valeri-bot/prisma/schema.prisma`. Migraciones en `prisma/migrations/` (`20261120120000_init`, `20261121090000_json_contacts`, `20261124090000_sessions_agent_mode`, `20261125090000_autentication`), aplicadas con `npm.cmd run db:migrate` (`prisma migrate deploy`). Horas en UTC (`timestamptz`).
 
-```json
-{ "573001234567": { "cedula": "1023456789", "telefono": "3001234567", "confirmadoEn": "2026-11-10T16:00:21.748Z" } }
+### 12.1 Tablas
+
+| Tabla | Qué guarda | Claves |
+|---|---|---|
+| `users` | Empleados autorizados (base de validación). Hoy: CSV temporal (`source = CSV_TEMPORAL`) | `document` único; `phone` (10 dígitos); `active` |
+| `contacts` | Cada número de WhatsApp que escribe. `verified_at` con fecha = autorizado | PK `wa_id`; `user_id` **único** (un empleado, un número); `phone_declared`, `id_buk` |
+| `sessions` | Conversaciones | `status` `ACTIVE`/`CLOSED`; `close_reason` `USER_FINISHED`/`TIMEOUT`/`SYSTEM`; `last_activity_at`, `message_count` |
+| `messages` | Histórico completo (entrantes y salientes) | `direction` `INBOUND`/`OUTBOUND`; `type`; `content` legible; `payload` JSON (fila elegida, botón, respuesta de la ventana, opciones enviadas, error de Meta); `external_message_id` |
+| `auth_attempts` | Cada intento de validación (cédula y celular ingresados + resultado) | `result` `AUTORIZADO`/`NO_REGISTRADO`/`CEDULA_EN_OTRO_NUMERO`/`ERROR` |
+| `audit_events` | Eventos de dominio: `SESSION_OPENED`, `SESSION_CLOSED`, `AUTH_ATTEMPT` | `event_type`, `wa_id`, `session_id`, `detail` |
+| `json` | Fragmento `contacts` del webhook crudo de Meta, tal cual llega, **cada vez que alguien escribe** (no se guardan los avisos de entregado/leído). Una sola columna | `contacts` `jsonb`: `{"contacts":[{"profile":{"name","username"},"wa_id","user_id","country_code"}]}`. Modelo `@@ignore` en Prisma (sin identificador); se inserta con SQL directo (`guardarJsonContacts`). Migración `20261121090000_json_contacts` |
+| `autentication` | **Prevista, aún sin uso en el código.** Traza de la autenticación por código: el usuario escribe cédula y teléfono, una API envía por WhatsApp un código y el usuario lo digita. Cada intento queda registrado | `document`, `phone`, `code` (texto, conserva ceros), `status` (`1` aprobado, `0` no pasó; por defecto 0), `created_at`. Índices por cédula, teléfono y fecha. Migración `20261125090000_autentication`. Al implementarla: regenerar el cliente Prisma, vencimiento corto del código y límite de intentos |
+
+**Usuarios de la base:** `desarrollo` (dueño, usa el bot y las migraciones) y `consulta` (**solo lectura**: `CONNECT`, `USAGE` en `public` y `SELECT` en todas las tablas, incluidas las futuras creadas por `desarrollo`). Ojo: `consulta` puede ver cédulas, teléfonos y mensajes.
+
+### 12.2 Cómo se registra la conversación
+
+- Entrantes: el provider emite `message` por cada mensaje; `app.ts` lo guarda.
+- Salientes: todos los envíos del provider (texto, listas, botones, ventanas, PDF) pasan por `provider.sendMessageMeta`; `app.ts` lo envuelve y guarda cada envío (incluido el error de Meta, si lo hubo).
+- Sesión (igual que Paula): un barrido cada 60 s cierra (`TIMEOUT`) las sesiones sin actividad durante `VALERI_SESION_TIMEOUT_MIN` (**10 min**) y le envía al empleado `MSG.sesionCerrada` ("Tu sesión ha sido finalizada por inactividad…"). Al cerrar se descarta lo que quedó a medias: la solicitud de vacaciones en curso y los datos del registro sin confirmar. "No, finalizar" la cierra (`USER_FINISHED`, sin aviso extra: ya se envió la despedida).
+- Al volver a escribir se abre una sesión nueva. El registro es permanente (`contacts` + `users`): un empleado ya validado va **directo al menú**; uno no registrado recibe de nuevo la ventana de registro (incluso si había dejado los datos sin confirmar).
+- Los mensajes salientes nunca abren sesión: el aviso de cierre queda en la sesión que se cerró.
+- Un fallo de la base se registra en el log y **no** interrumpe la conversación.
+
+### 12.3 Operación frecuente (SQL)
+
+```sql
+-- Repetir el registro desde un número (o liberar el vínculo por cambio de celular)
+UPDATE contacts SET user_id = NULL, verified_at = NULL WHERE wa_id = '573001234567';
+
+-- Desactivar a un empleado (no podrá validarse; se conserva el histórico)
+UPDATE users SET active = false WHERE document = '1023456789';
+
+-- Conversación de un número
+SELECT m.created_at, m.direction, m.type, m.content
+FROM messages m WHERE m.wa_id = '573001234567' ORDER BY m.created_at;
+
+-- Intentos de validación fallidos del día
+SELECT wa_id, document, result, detail, created_at FROM auth_attempts
+WHERE result <> 'AUTORIZADO' AND created_at >= current_date ORDER BY created_at DESC;
 ```
-
-- Clave: wa_id. Solo empleados autorizados. Puede incluir `idBuk` si la validación de ETL lo devuelve (ninguna opción lo usa: ETL se consulta por cédula).
-- Datos personales: en `.gitignore`.
-- Archivo vacío o JSON inválido = sin registros (el bot no se cae).
-- **Repetir el registro desde un número:** borrar su entrada (o el archivo). No hace falta reiniciar.
-
-### 12.2 Base de datos objetivo (no desarrollada)
-
-PostgreSQL 18 del servidor, base `valeri_bot` con rol propio y Prisma (guías 00 §4 y 01 §5). Tablas previstas: vínculos wa_id ↔ cédula (únicos), códigos SMS, intentos de validación, mensajes procesados (idempotencia), solicitudes y auditoría.
 
 ---
 
@@ -617,6 +678,16 @@ Túnel local: Kiro/VS Code → Ports → `3010` → visibilidad **Public**; la U
 8. Firewall (Administrador): `New-NetFirewallRule -DisplayName "Valeri Bot 3010" -Direction Inbound -Protocol TCP -LocalPort 3010 -Action Allow`.
 9. Redes publica `https://<subdominio>/webhook` → `servidor:3010` con certificado **público** (Meta no acepta la CA interna `vigia`). Configurar esa URL en la app Valeri y revisar el override de la WABA (§3).
 
+### 16.2b Webhook público en el servidor (Microsoft Dev Tunnels)
+
+Mientras Redes no publique una ruta propia, el webhook se expone con un **Dev Tunnel persistente** que no depende de Kiro ni de VS Code:
+
+- El ejecutable `devtunnel.exe` (firmado por Microsoft) y la configuración de PM2 viven en `infra/`, que está **fuera de git** porque contiene el ID del túnel. El detalle operativo está en `infra/LEEME.md`, solo en el servidor.
+- El túnel tiene un ID aleatorio, expone solo el puerto `3010` y tiene acceso anónimo (Meta no se autentica). Solo hace conexiones de **salida**: no abre puertos ni requiere administrador.
+- PM2 lo mantiene vivo con el proceso `valeri-tunnel`. `valeri-tunnel-renovar` extiende cada semana la vida del túnel, que es de 30 días deslizantes.
+- Con la URL pública activa, `META_APP_SECRET` es **obligatoria**.
+- Dev Tunnels es una herramienta de desarrollo. Para producción a largo plazo, migrar a Cloudflare Tunnel o a la ruta de Redes (D13); el bot no cambia.
+
 ### 16.3 Problemas conocidos
 
 | Síntoma | Causa | Solución |
@@ -649,6 +720,59 @@ Túnel local: Kiro/VS Code → Ports → `3010` → visibilidad **Public**; la U
 | 7 | Prueba completa por WhatsApp de las tres opciones conectadas | Bot |
 | 8 | Token permanente y `META_APP_SECRET` | Meta / TI |
 | 9 | Ruta pública de Redes, despliegue con PM2 y override de la WABA | Infraestructura + Redes |
-| 10 | Base de datos `valeri_bot` en lugar del JSON; idempotencia por `message_id` | Bot + Infraestructura |
-| 11 | Código de verificación por SMS | Bot |
+| 10 | Idempotencia por `message_id` (Meta puede reenviar un webhook). La base `valeri_bot` ya está en uso | Bot |
+| 13 | Reemplazar el CSV temporal por la validación contra Buk (modo `etl`) cuando ETL publique el endpoint; la tabla `users` puede seguir como respaldo | ETL + Bot |
+| 11 | Código de verificación por WhatsApp: la tabla `autentication` ya existe (§12.1); falta la API y el flujo | Bot |
+| 14 | Tabla DynamoDB `valeri-sesiones` y usuario IAM dedicado en lugar de `scraper` (§18.4) | AWS / TI |
 | 12 | Proceso para liberar el vínculo cuando un empleado cambia de celular | RR. HH. / TI |
+
+---
+
+## 18. Hablar con agente (agente de IA de AWS)
+
+El colaborador conversa en lenguaje natural con un agente de **Bedrock AgentCore** (harness) que consulta Buk. Cuando
+hay un documento, el agente **le pide al bot que lo envíe** (herramienta `enviar_documento_whatsapp`) y el bot lo entrega
+con sus funciones de siempre, usando **la cédula del registro**. Guía de integración: `docs/guia-integracion-app.md`
+(**fuera de git**: contiene datos de la cuenta de AWS).
+
+### 18.1 Cuándo está disponible (`agenteDisponiblePara`)
+
+| Condición | Resultado |
+|---|---|
+| Falta `AGENTE_ARN` o la credencial (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`) | Apagado: "en construcción" (como antes) |
+| Hay `AGENTE_TABLA_SESIONES` (control de identidad en AWS) | Abierto a todos los registrados |
+| Sin tabla | **Cerrado**, salvo los wa_id de `AGENTE_NUMEROS_PRUEBA` |
+| Sin tabla y `AGENTE_PERMITIR_SIN_CONTROL=true` | Abierto a todos **sin control**: no recomendado (permite suplantación por el texto del chat) |
+
+El log de arranque indica el estado (`agente de IA: APAGADO / CERRADO salvo N número(s) de prueba / ABIERTO`).
+
+**Estado actual (2026-11-25):** `AGENTE_PERMITIR_SIN_CONTROL=true`, es decir, **abierto a todos los registrados sin control de identidad** (decisión del equipo para pruebas). Falta la tabla DynamoDB `valeri-sesiones`; al crearla, poner `AGENTE_TABLA_SESIONES` y volver a `AGENTE_PERMITIR_SIN_CONTROL=false`.
+
+### 18.2 Código
+
+| Archivo | Qué hace |
+|---|---|
+| `src/agente.ts` | Cliente: `InvokeHarnessCommand` con **solo** `harnessArn`, `runtimeSessionId`, `runtimeUserId` (seudónimo SHA-256, no el número) y `messages`; lee el flujo de eventos; DynamoDB (registrar/renovar/cerrar sesión); `limpiarTextoColaborador` (quita bloques que imiten `[CONTEXTO DEL SISTEMA]`); nunca invoca sin cédula |
+| `src/modo-agente.ts` | Entrar/salir del modo agente, **cola propia por número** (separada de la de `sesiones.ts`), máx. **3** vueltas de entrega por mensaje (cada vuelta puede traer **varios documentos**: el agente puede pedir, por ejemplo, comprobante y certificado a la vez; el bot los entrega todos y devuelve todos los `toolResult` en un solo mensaje), textos partidos en trozos ≤ 4.000, reintento ante `ThrottlingException`, aviso "Un momento… 💭" a los 5 s, auditoría |
+| `src/documento-agente.ts` | `entregarDocumentoAgente`: valida el pedido (`comprobante`/`certificado`, año 2000–2100, mes 1–12), ETL → descarga → Meta, con la cédula del registro; responde `{enviado}` o `{enviado:false, motivo}` |
+| `src/flows/bienvenida.flow.ts` | En modo agente: "menú"/"menu"/"salir"/"volver" → sale y muestra el menú; lista/botón/ventana → sale y se atiende como siempre; audio/imagen → "solo texto"; texto libre → agente |
+| `src/opciones.ts` | Opción `agente` del menú y botón "Hablar con agente" de "¿otra consulta?" → `entrarModoAgente` (o "en construcción") |
+| `src/sesiones.ts` | `estadoAgente`, `marcarModoAgente`, `auditar`; al cerrar una sesión en modo agente borra su registro en DynamoDB |
+
+### 18.3 Datos
+
+- `sessions.agent_mode` (bool) y `sessions.agent_session_id` (texto), migración `20261124090000_sessions_agent_mode`. El
+  estado sobrevive a reinicios del bot. Si la sesión se cierra (10 min o "No, finalizar"), el siguiente mensaje abre una
+  sesión nueva **sin** modo agente → menú.
+- `messages`: guarda lo que escribió el colaborador (sin el bloque de contexto) y todo lo que respondió el agente.
+- `audit_events`: `AGENT_MODE_STARTED`, `AGENT_MODE_ENDED` (`motivo`), `AGENT_TOOL` (`herramienta`, `duracion_ms`,
+  `stop_reason`), `AGENT_DOCUMENT` (`tipo`, `year`, `month`, `enviado`, `motivo`), `AGENT_ERROR` (`codigo`). Sin cédula.
+
+### 18.4 Seguridad (decisiones y riesgos aceptados)
+
+- **Credencial `scraper`** (decisión del equipo): tiene `AdministratorAccess` sobre la cuenta. Solo en `.env`. Recomendado:
+  usuario dedicado con permiso únicamente para invocar este agente y escribir en la tabla de sesiones.
+- **Control de identidad**: hasta que AWS cree la tabla DynamoDB, la opción queda cerrada a los colaboradores. Sin ese
+  control, un usuario podría pedir datos de otra cédula escribiendo un contexto falso; el bot limpia esos patrones del
+  texto, pero la protección real es la de AWS.
+- Los PDF siempre se buscan con la cédula del registro, nunca con la que diga el agente.

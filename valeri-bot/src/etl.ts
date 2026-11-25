@@ -117,8 +117,11 @@ export function obtenerCertificado(cedula: string) {
   return llamarEtl<CertificadoEtl>('/certificado-laboral', undefined, { cedula })
 }
 
-/** Comprobante de pago (nómina) de un año y mes. 404 = no existe para ese periodo. */
-export function obtenerComprobante(cedula: string, year: number, month: number) {
+/**
+ * Comprobante de pago (nómina) de un año y mes. 404 = no existe para ese periodo.
+ * Sin year/month (lo usa el agente para "el último comprobante"), ETL devuelve el más reciente.
+ */
+export function obtenerComprobante(cedula: string, year?: number, month?: number) {
   return llamarEtl<ComprobanteEtl>(`/extracto/${encodeURIComponent(cedula)}`, { year, month, format: 'pdf' })
 }
 

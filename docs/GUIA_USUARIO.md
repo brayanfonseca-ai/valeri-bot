@@ -16,7 +16,7 @@ Con ella puedes hacer trámites desde tu celular, sin entrar a la plataforma de 
 | 🌴 Días de vacaciones | Saber cuántos días de vacaciones tienes pendientes por disfrutar |
 | 📝 Solicitar vacaciones | Pedir tus días de descanso |
 | 📑 Certificado laboral | Recibir tu certificado laboral en PDF |
-| 💬 Hablar con agente | Hablar con una persona de Recursos Humanos |
+| 💬 Hablar con agente | Preguntarle al agente de Valeri, con tus palabras, por tus vacaciones, tu comprobante o tu certificado |
 
 > Las opciones del menú se están habilitando poco a poco. Si una opción todavía no está
 > disponible, Valeri te avisará.
@@ -107,7 +107,7 @@ flowchart LR
 6. Valeri te pregunta *"¿Deseas realizar otra consulta?"* con tres botones:
    - **Sí, gracias**: vuelves al menú principal.
    - **No, finalizar**: Valeri se despide y termina la conversación. Cuando le escribas de nuevo, verás el menú (no tienes que registrarte otra vez).
-   - **Hablar con agente**: te comunica con Recursos Humanos *(muy pronto disponible)*.
+   - **Hablar con agente**: conversas con el agente de Valeri escribiendo lo que necesitas. Puedes pedir varias cosas en un mismo mensaje (por ejemplo, "mi comprobante de octubre y mi certificado laboral") y te envía cada documento. Para volver al menú escribe **menú**.
 
 Si ese mes todavía no tiene comprobante (por ejemplo, aún no se ha liquidado la nómina), Valeri te lo dirá. Puedes elegir otro mes.
 
@@ -157,7 +157,7 @@ flowchart TD
     E --> G{"¿Otra consulta?"}
     G -- "Sí, gracias" --> A
     G -- "No, finalizar" --> H["Valeri se despide"]
-    G -- "Hablar con agente" --> I["Recursos Humanos<br/>(muy pronto)"] --> G
+    G -- "Hablar con agente" --> I["Agente de Valeri"] --> G
     F --> G
     C -. "🏠 Menú principal" .-> A
     D -. "🏠 Menú principal" .-> A
@@ -200,7 +200,7 @@ No directamente. Por seguridad, cada persona usa Valeri desde un solo número. S
 Valeri solo te pide tu cédula y tu celular para confirmar que eres tú. La información de pagos y vacaciones solo se envía al número verificado.
 
 **¿Valeri tiene horario?**
-Valeri responde en cualquier momento. La opción *Hablar con agente* dependerá del horario de Recursos Humanos.
+Valeri responde en cualquier momento, incluida la opción *Hablar con agente*.
 
 **¿Qué hago si Valeri no me responde?**
 Espera unos minutos y escríbele de nuevo. Si sigue sin responder, comunícate con Recursos Humanos.

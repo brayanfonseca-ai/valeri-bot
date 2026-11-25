@@ -44,8 +44,8 @@ export const MSG = {
 
   datosNoValidos: [
     'No pude reconocer esos datos 🤔',
-    '• La cédula debe tener solo números, entre 5 y 10 dígitos.',
-    '• El celular debe ser colombiano, de 10 dígitos y empezar por 3.',
+    '• La cédula debe tener solo números, entre 5 y 15 dígitos.',
+    '• El celular debe tener 10 dígitos (puedes escribirlo con o sin +57).',
     'Vuelve a ingresarlos, por favor.',
   ].join('\n'),
 
@@ -61,12 +61,16 @@ export const MSG = {
   /** Validación exitosa: se envía justo antes del menú, solo la primera vez. */
   autorizado: '✅ ¡Listo! Verifiqué tu identidad. Desde ahora puedes usar el menú cada vez que me escribas.',
 
-  /** No aparece en Buk, está inactivo o el celular no coincide. */
+  /**
+   * La cédula y el celular no coinciden con un empleado registrado (o está inactivo).
+   * Mismo mensaje para todos los casos: no revela si falló la cédula o el celular.
+   */
   noAutorizado: [
-    'Lo siento 😔 no pude verificar tu información en Buk.',
+    'Lo siento mucho 😔 no encontré un registro con la cédula y el celular que ingresaste, así que por ahora no puedes utilizar los servicios de Valeri.',
     '',
-    'Es posible que tu cédula o tu celular no estén registrados correctamente.',
-    'Por favor comunícate con *Recursos Humanos* para que revisen y actualicen tus datos en Buk. Cuando estén corregidos, escríbeme de nuevo y con gusto te ayudo.',
+    'Te invitamos a *actualizar tus datos en Buk* y a comunicarte con el área de *Gestión Humana* para que te ayuden a validarlos.',
+    '',
+    'Cuando estén actualizados, escríbeme de nuevo y con gusto te ayudo. 🙌',
   ].join('\n'),
 
   /** La cédula ya está vinculada a otro número de WhatsApp (un empleado, un número). */
@@ -111,6 +115,30 @@ export const MSG = {
     '¡Gracias por usar Valeri! 👋',
     'Cuando necesites algo más, escríbeme y con gusto te ayudo.',
   ].join('\n'),
+
+  /** Cierre automático de la sesión por inactividad (VALERI_SESION_TIMEOUT_MIN, 10 min). */
+  sesionCerrada: [
+    'Tu sesión ha sido finalizada por inactividad ⏳',
+    'Cuando quieras continuar, escríbeme nuevamente y con gusto te ayudo. 👋',
+  ].join('\n'),
+
+  /** Modo agente de IA ("Hablar con agente"). Ver docs/guia-integracion-app.md. */
+  agente: {
+    saludo: [
+      'Hola, soy Valeri 🤖',
+      'Escríbeme con tus palabras lo que necesitas: tus días de vacaciones, tu comprobante de pago o tu certificado laboral.',
+      '',
+      'Para volver al menú escribe *menú*.',
+      '_Esta conversación queda registrada para mejorar el servicio y atender tus solicitudes._',
+    ].join('\n'),
+    espera: 'Un momento… 💭',
+    salida: 'Listo, salimos de la conversación con Valeri 👋',
+    error: 'Tuve un problema técnico 🙏 Intenta de nuevo en unos minutos. Escribe *menú* para volver.',
+    /** El colaborador escribió mientras el agente aún responde el mensaje anterior. */
+    ocupado: 'Dame un momento, todavía estoy respondiendo tu mensaje anterior ⏳',
+    /** Llegó un audio, imagen, ubicación, etc. en modo agente. */
+    soloTexto: 'Por ahora solo entiendo mensajes de texto ✍️ Escríbeme lo que necesitas, o *menú* para volver.',
+  },
 
   /** Respuesta temporal mientras una opción del menú no está desarrollada. */
   opcionEnConstruccion: (titulo: string) => `🚧 *${titulo}* estará disponible muy pronto.`,

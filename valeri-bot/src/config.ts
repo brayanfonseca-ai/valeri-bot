@@ -11,10 +11,12 @@ function requerida(nombre: string): string {
   return valor
 }
 
-function leerModoValidacion(): 'abierta' | 'etl' {
-  const valor = process.env.VALERI_VALIDACION?.trim().toLowerCase() || 'etl'
-  if (valor !== 'abierta' && valor !== 'etl') {
-    throw new Error(`VALERI_VALIDACION debe ser "abierta" o "etl" (llegó "${valor}").`)
+export type ModoValidacion = 'bd' | 'abierta' | 'etl'
+
+function leerModoValidacion(): ModoValidacion {
+  const valor = process.env.VALERI_VALIDACION?.trim().toLowerCase() || 'bd'
+  if (valor !== 'bd' && valor !== 'abierta' && valor !== 'etl') {
+    throw new Error(`VALERI_VALIDACION debe ser "bd", "abierta" o "etl" (llegó "${valor}").`)
   }
   return valor
 }
@@ -30,9 +32,36 @@ export const config = {
     appSecret: process.env.META_APP_SECRET?.trim() || undefined,
   },
   validacion: {
-    /** "abierta" (pruebas: todos autorizados) o "etl" (consulta el endpoint de ETL). */
+    /**
+     * "bd" (tabla users de valeri_bot: documento Y teléfono deben coincidir),
+     * "abierta" (pruebas: todos autorizados) o "etl" (consulta el endpoint de ETL).
+     */
     modo: leerModoValidacion(),
     etlUrl: process.env.ETL_VALIDACION_URL?.trim() || undefined,
+  },
+  /**
+   * Agente de IA de AWS (Bedrock AgentCore) para "Hablar con agente". Ver docs/guia-integracion-app.md.
+   * La credencial (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY) la lee el SDK directamente del entorno.
+   */
+  agente: {
+    arn: process.env.AGENTE_ARN?.trim() || undefined,
+    region: process.env.AGENTE_REGION?.trim() || 'us-east-2',
+    /** Tabla DynamoDB del control de identidad. Vacía = sin control (ver `abiertoSinControl`). */
+    tablaSesiones: process.env.AGENTE_TABLA_SESIONES?.trim() || undefined,
+    timeoutMs: Number(process.env.AGENTE_TIMEOUT_MS ?? 90000),
+    /** Sin tabla, solo se abre a todos con esta bandera explícita (NO recomendado: permite suplantación). */
+    abiertoSinControl: process.env.AGENTE_PERMITIR_SIN_CONTROL?.trim() === 'true',
+    /** wa_id que pueden usar el agente aunque esté cerrado (pruebas). */
+    numerosPrueba: (process.env.AGENTE_NUMEROS_PRUEBA ?? '')
+      .split(',')
+      .map((n) => n.replace(/\D/g, ''))
+      .filter(Boolean),
+    credencial: Boolean(process.env.AWS_ACCESS_KEY_ID?.trim() && process.env.AWS_SECRET_ACCESS_KEY?.trim()),
+  },
+  /** Control de sesiones (base valeri_bot). */
+  sesion: {
+    /** Minutos sin actividad para cerrar una sesión (TIMEOUT) y avisar al empleado. Igual que Paula: 10. */
+    timeoutMin: Number(process.env.VALERI_SESION_TIMEOUT_MIN ?? 10),
   },
   /** API de ETL hacia Buk (API Gateway). Autenticación: cabecera x-api-key. */
   etl: {

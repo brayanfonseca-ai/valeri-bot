@@ -1,0 +1,225 @@
+// ============================================================================
+// Esquema de la base de datos de Valeri (PostgreSQL local, base `valeri_bot`).
+// Fuente de verdad del modelo de datos del bot. Convenciones (iguales a la
+// plataforma del servidor): tablas y columnas en snake_case, horas en UTC
+// (timestamptz), auditoría de lo que pasa y nada de borrados físicos de la
+// conversación.
+//
+// Regenerar el cliente:   npm run prisma:generate
+// Aplicar migraciones:     npm run db:migrate
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------------
+// Catálogos
+// ----------------------------------------------------------------------------
+
+/// De dónde salió el empleado autorizado.
+enum UserSource {
+  CSV_TEMPORAL // base temporal cargada desde data/base_auten_tempo.csv
+  BUK          // validado contra Buk vía ETL (modo "etl")
+  MANUAL       // creado a mano por Gestión Humana / TI
+}
+
+enum SessionStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum CloseReason {
+  USER_FINISHED // tocó "No, finalizar"
+  TIMEOUT       // sin actividad durante VALERI_SESION_TIMEOUT_MIN
+  SYSTEM        // cierre técnico
+}
+
+enum MessageDirection {
+  INBOUND  // del empleado hacia Valeri
+  OUTBOUND // de Valeri hacia el empleado
+}
+
+/// Resultado de un intento de validación de identidad.
+enum AuthResult {
+  AUTORIZADO
+  NO_REGISTRADO          // documento y teléfono no coinciden con la base
+  CEDULA_EN_OTRO_NUMERO  // la cédula ya está vinculada a otro WhatsApp
+  ERROR                  // falla técnica al validar
+}
+
+// ----------------------------------------------------------------------------
+// users — empleados autorizados para usar Valeri (base de validación).
+// Hoy se alimenta del CSV temporal; la validación exige que el DOCUMENTO y el
+// TELÉFONO ingresados coincidan con esta tabla.
+// ----------------------------------------------------------------------------
+model User {
+  id        String     @id @default(uuid())
+  /// Cédula: solo dígitos, sin ceros a la izquierda.
+  document  String     @unique
+  /// Celular colombiano de 10 dígitos (sin indicativo).
+  phone     String
+  source    UserSource @default(CSV_TEMPORAL)
+  /// false = no puede validarse (se conserva el registro).
+  active    Boolean    @default(true)
+  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  contact Contact?
+
+  @@index([phone])
+  @@map("users")
+}
+
+// ----------------------------------------------------------------------------
+// contacts — cada número de WhatsApp que le escribe a Valeri.
+// `user_id` único = regla "un empleado, un número": un empleado validado solo
+// puede estar vinculado a un WhatsApp. `verified_at` con fecha = autorizado.
+// ----------------------------------------------------------------------------
+model Contact {
+  /// wa_id que entrega Meta (número sin '+').
+  waId          String    @id @map("wa_id")
+  profileName   String?   @map("profile_name")
+  userId        String?   @unique @map("user_id")
+  /// Celular que el empleado escribió en la ventana de registro.
+  phoneDeclared String?   @map("phone_declared")
+  /// Id del empleado en Buk (si la validación de ETL lo devuelve).
+  idBuk         Int?      @map("id_buk")
+  verifiedAt    DateTime? @map("verified_at") @db.Timestamptz(3)
+  lastSeenAt    DateTime? @map("last_seen_at") @db.Timestamptz(3)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user         User?         @relation(fields: [userId], references: [id])
+  sessions     Session[]
+  authAttempts AuthAttempt[]
+
+  @@map("contacts")
+}
+
+// ----------------------------------------------------------------------------
+// sessions — una conversación. Se abre con el primer mensaje y se cierra por
+// inactividad o cuando el empleado toca "No, finalizar".
+// ----------------------------------------------------------------------------
+model Session {
+  id             String        @id @default(uuid())
+  waId           String        @map("wa_id")
+  status         SessionStatus @default(ACTIVE)
+  startedAt      DateTime      @default(now()) @map("started_at") @db.Timestamptz(3)
+  lastActivityAt DateTime      @default(now()) @map("last_activity_at") @db.Timestamptz(3)
+  closedAt       DateTime?     @map("closed_at") @db.Timestamptz(3)
+  closeReason    CloseReason?  @map("close_reason")
+  messageCount   Int           @default(0) @map("message_count")
+  /// true = la conversación está con el agente de IA de AWS ("Hablar con agente").
+  agentMode      Boolean       @default(false) @map("agent_mode")
+  /// runtimeSessionId de AgentCore (uno nuevo cada vez que entra al modo agente, ≥ 33 caracteres).
+  agentSessionId String?       @map("agent_session_id")
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  contact  Contact   @relation(fields: [waId], references: [waId])
+  messages Message[]
+
+  @@index([waId, status])
+  @@index([status, lastActivityAt])
+  @@map("sessions")
+}
+
+// ----------------------------------------------------------------------------
+// messages — histórico completo de la conversación (entrantes y salientes).
+// ----------------------------------------------------------------------------
+model Message {
+  id                String           @id @default(uuid())
+  sessionId         String           @map("session_id")
+  waId              String           @map("wa_id")
+  direction         MessageDirection
+  /// text | interactive | list | buttons | flow | document | image | ...
+  type              String           @default("text")
+  /// Texto legible (cuerpo, título del botón o fila elegida).
+  content           String?
+  /// Datos técnicos del mensaje (id de fila, respuesta de la ventana, etc.).
+  payload           Json?
+  /// wamid de Meta, cuando se conoce.
+  externalMessageId String?          @map("external_message_id")
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@index([waId, createdAt])
+  @@map("messages")
+}
+
+// ----------------------------------------------------------------------------
+// auth_attempts — cada intento de validación de identidad (quién, qué ingresó
+// y el resultado). Sirve para soporte de Gestión Humana y para auditoría.
+// ----------------------------------------------------------------------------
+model AuthAttempt {
+  id        String     @id @default(uuid())
+  waId      String     @map("wa_id")
+  document  String
+  phone     String
+  result    AuthResult
+  detail    String?
+  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  contact Contact @relation(fields: [waId], references: [waId])
+
+  @@index([waId, createdAt])
+  @@index([document])
+  @@map("auth_attempts")
+}
+
+// ----------------------------------------------------------------------------
+// audit_events — eventos de dominio (sesión abierta/cerrada, validación, etc.).
+// ----------------------------------------------------------------------------
+model AuditEvent {
+  id        String   @id @default(uuid())
+  eventType String   @map("event_type")
+  waId      String?  @map("wa_id")
+  sessionId String?  @map("session_id")
+  detail    Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([eventType, createdAt])
+  @@index([waId, createdAt])
+  @@map("audit_events")
+}
+
+// ----------------------------------------------------------------------------
+// json — fragmento `contacts` del webhook de Meta, tal cual llega, cada vez que
+// alguien escribe. UNA sola columna (pedido explícito): {"contacts":[{profile,
+// wa_id, user_id, country_code}]}. Prisma exige un identificador para manejar
+// una tabla en el cliente, así que el modelo es @@ignore: la migración la crea y
+// el bot inserta con SQL directo (src/sesiones.ts → guardarJsonContacts).
+// ----------------------------------------------------------------------------
+model JsonContacts {
+  contacts Json @db.JsonB
+
+  @@map("json")
+  @@ignore
+}
+
+// ----------------------------------------------------------------------------
+// autentication: traza de la autenticación por código (PREVISTA, aún no se usa).
+// Flujo futuro: el usuario escribe cédula y teléfono -> una API envía por WhatsApp un código
+// -> el usuario lo digita. Cada intento queda aquí: status 1 = aprobado, 0 = no pasó.
+// ----------------------------------------------------------------------------
+model Autentication {
+  id        String   @id @default(uuid())
+  document  String   // cédula que escribió el usuario
+  phone     String   // teléfono que escribió el usuario
+  code      String   // código de autenticación enviado por WhatsApp
+  status    Int      @default(0) @db.SmallInt // 1 = aprobado, 0 = no pasó la autenticación
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([document])
+  @@index([phone])
+  @@index([createdAt])
+  @@map("autentication")
+}
