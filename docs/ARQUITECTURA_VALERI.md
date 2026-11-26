@@ -722,7 +722,7 @@ Mientras Redes no publique una ruta propia, el webhook se expone con un **Dev Tu
 | 9 | Ruta pública de Redes, despliegue con PM2 y override de la WABA | Infraestructura + Redes |
 | 10 | Idempotencia por `message_id` (Meta puede reenviar un webhook). La base `valeri_bot` ya está en uso | Bot |
 | 13 | Reemplazar el CSV temporal por la validación contra Buk (modo `etl`) cuando ETL publique el endpoint; la tabla `users` puede seguir como respaldo | ETL + Bot |
-| 11 | Código de verificación por WhatsApp: la tabla `autentication` ya existe (§12.1); falta la API y el flujo | Bot |
+| 11 | Código de verificación por WhatsApp: la tabla `autentication` ya existe (§12.1); falta la API y el flujo. Diseño completo en `docs/AUTENTICACION.md` | Bot |
 | 14 | Tabla DynamoDB `valeri-sesiones` y usuario IAM dedicado en lugar de `scraper` (§18.4) | AWS / TI |
 | 12 | Proceso para liberar el vínculo cuando un empleado cambia de celular | RR. HH. / TI |
 
@@ -745,6 +745,11 @@ con sus funciones de siempre, usando **la cédula del registro**. Guía de integ
 | Sin tabla y `AGENTE_PERMITIR_SIN_CONTROL=true` | Abierto a todos **sin control**: no recomendado (permite suplantación por el texto del chat) |
 
 El log de arranque indica el estado (`agente de IA: APAGADO / CERRADO salvo N número(s) de prueba / ABIERTO`).
+
+**Versión que contesta:** el bot invoca el punto de conexión **`produccion`** del harness (`AGENTE_QUALIFIER`,
+por defecto `produccion`; vacío = `DEFAULT`). Los cambios que se hacen en el agente (DEFAULT) **no** llegan a WhatsApp
+hasta que en AWS se mueve `produccion` a la nueva versión (agente → Puntos de conexión → `produccion` → Editar → versión → Guardar).
+No hace falta reiniciar el bot para cambiar de versión. El log de arranque muestra `agente de IA: punto de conexión produccion`.
 
 **Estado actual (2026-11-25):** `AGENTE_PERMITIR_SIN_CONTROL=true`, es decir, **abierto a todos los registrados sin control de identidad** (decisión del equipo para pruebas). Falta la tabla DynamoDB `valeri-sesiones`; al crearla, poner `AGENTE_TABLA_SESIONES` y volver a `AGENTE_PERMITIR_SIN_CONTROL=false`.
 

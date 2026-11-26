@@ -80,6 +80,7 @@ async function main() {
   } else {
     console.log(`[valeri-bot] agente de IA: CERRADO salvo ${config.agente.numerosPrueba.length} número(s) de prueba (falta AGENTE_TABLA_SESIONES)`)
   }
+  if (agenteConfigurado()) console.log(`[valeri-bot] agente de IA: punto de conexión ${config.agente.qualifier ?? 'DEFAULT'}`)
   if (config.validacion.modo === 'bd') {
     const total = await prisma.user.count({ where: { active: true } })
     console.log(`[valeri-bot] empleados autorizados en la tabla users: ${total}`)

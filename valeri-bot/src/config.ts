@@ -46,6 +46,12 @@ export const config = {
   agente: {
     arn: process.env.AGENTE_ARN?.trim() || undefined,
     region: process.env.AGENTE_REGION?.trim() || 'us-east-2',
+    /**
+     * Punto de conexión (endpoint) del harness que se invoca. Por defecto "produccion": así los cambios
+     * que se hacen en el agente (DEFAULT) no llegan a WhatsApp hasta que se mueve "produccion" a la nueva versión.
+     * Vacío explícito (AGENTE_QUALIFIER=) = DEFAULT.
+     */
+    qualifier: process.env.AGENTE_QUALIFIER === undefined ? 'produccion' : process.env.AGENTE_QUALIFIER.trim() || undefined,
     /** Tabla DynamoDB del control de identidad. Vacía = sin control (ver `abiertoSinControl`). */
     tablaSesiones: process.env.AGENTE_TABLA_SESIONES?.trim() || undefined,
     timeoutMs: Number(process.env.AGENTE_TIMEOUT_MS ?? 90000),

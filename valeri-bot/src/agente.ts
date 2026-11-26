@@ -137,6 +137,7 @@ async function invocar(agentSessionId: string, waId: string, messages: unknown[]
     // Solo los campos mínimos: sin model, systemPrompt ni tools (seguridad).
     new InvokeHarnessCommand({
       harnessArn: config.agente.arn,
+      ...(config.agente.qualifier ? { qualifier: config.agente.qualifier } : {}),
       runtimeSessionId: agentSessionId,
       runtimeUserId: seudonimo(waId),
       messages,
